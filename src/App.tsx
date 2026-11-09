@@ -1030,8 +1030,11 @@ function App() {
       ? await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName, phone, primary_role: 'seeker' } },
-        })
+        options: {
+          data: { full_name: fullName, phone, primary_role: 'seeker' },
+          emailRedirectTo: window.location.origin,
+        },
+      })
       : await supabase.auth.signInWithPassword({ email, password })
     if (result.error) {
       setAuthError(result.error.message)
