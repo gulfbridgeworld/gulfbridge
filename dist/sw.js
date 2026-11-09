@@ -1,11 +1,11 @@
 const CACHE_NAME = 'gulfbridge-shell-v1'
 const APP_SHELL = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/gulfbridge.svg',
-  '/icons/app-192.png',
-  '/icons/app-512.png',
+  new URL('./', self.location.href).href,
+  new URL('./index.html', self.location.href).href,
+  new URL('./manifest.webmanifest', self.location.href).href,
+  new URL('./gulfbridge.svg', self.location.href).href,
+  new URL('./icons/app-192.png', self.location.href).href,
+  new URL('./icons/app-512.png', self.location.href).href,
 ]
 const CACHEABLE_PATHS = new Set(APP_SHELL)
 
@@ -35,17 +35,19 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
 
   if (request.mode === 'navigate') {
+    const offlineIndex = new URL('./index.html', self.location.href).href
+
     event.respondWith(
       fetch(request)
         .then((response) => response.ok
-          ? caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', response.clone()).then(() => response))
+          ? caches.open(CACHE_NAME).then((cache) => cache.put(offlineIndex, response.clone()).then(() => response))
           : response)
-        .catch(async () => (await caches.match(request)) || (await caches.match('/index.html'))),
+        .catch(async () => (await caches.match(request)) || (await caches.match(offlineIndex))),
     )
     return
   }
 
-  if (url.pathname.startsWith('/assets/') || CACHEABLE_PATHS.has(url.pathname)) {
+  if (url.pathname.startsWith(new URL('./assets/', self.location.href).pathname) || CACHEABLE_PATHS.has(url.href)) {
     event.respondWith(
       caches.match(request).then((cached) => cached || fetch(request).then((response) => {
         if (!response.ok) return response
