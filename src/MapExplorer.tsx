@@ -110,7 +110,7 @@ export default function MapExplorer({ jobs, onSelectJob }: Props) {
         </MapContainer>
       </div>
       <p className="map-attribution-note">
-        Map data © OpenStreetMap contributors. Public map and search services have usage policies and limits; production usage should use a provider plan suited to traffic.
+        Map data © OpenStreetMap contributors.
       </p>
     </section>
   )

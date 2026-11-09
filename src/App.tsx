@@ -16,6 +16,7 @@ import {
   Heart,
   Languages,
   LockKeyhole,
+  Mail,
   MapPin,
   Menu,
   MessageCircle,
@@ -33,7 +34,7 @@ import { configurationMessage, isSupabaseConfigured, supabase } from './lib/supa
 import './App.css'
 
 type Language = 'en' | 'ar'
-type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin'
+type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help'
 type Account = {
   id: string
   email: string
@@ -119,7 +120,7 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin']
+const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help']
 
 function isAppPage(value: unknown): value is Page {
   return typeof value === 'string' && appPages.includes(value as Page)
@@ -130,6 +131,7 @@ const translations = {
     navJobs: 'Find jobs',
     navMap: 'Explore map',
     navEmployers: 'For employers',
+    navHelp: 'Help & safety',
     signIn: 'Sign in',
     back: 'Back',
     profile: 'My profile',
@@ -179,7 +181,7 @@ const translations = {
     emptyApplications: 'Your applications will appear here after you apply.',
     premium: 'Premium employer',
     verified: 'Platform checked',
-    sample: 'Sample opportunity',
+    sample: 'Example opportunity',
     language: 'العربية',
     loginRequired: 'Sign in to continue',
   },
@@ -187,6 +189,7 @@ const translations = {
     navJobs: 'ابحث عن وظائف',
     navMap: 'استكشف الخريطة',
     navEmployers: 'لأصحاب العمل',
+    navHelp: 'المساعدة والسلامة',
     signIn: 'تسجيل الدخول',
     back: 'رجوع',
     profile: 'ملفي الشخصي',
@@ -236,7 +239,7 @@ const translations = {
     emptyApplications: 'ستظهر طلباتك هنا بعد التقديم.',
     premium: 'صاحب عمل مميز',
     verified: 'تمت مراجعته من المنصة',
-    sample: 'فرصة تجريبية',
+    sample: 'فرصة توضيحية',
     language: 'English',
     loginRequired: 'سجّل الدخول للمتابعة',
   },
@@ -342,7 +345,7 @@ function App() {
   const [savedIds, setSavedIds] = useState<string[]>([])
   const [applications, setApplications] = useState<ApplicationRecord[]>([])
   const [employerApplications, setEmployerApplications] = useState<EmployerApplication[]>([])
-  const [jobs, setJobs] = useState(starterJobs)
+  const [jobs, setJobs] = useState<Job[]>(() => import.meta.env.DEV && !isSupabaseConfigured ? starterJobs : [])
   const [mySubmissions, setMySubmissions] = useState<RecruiterSubmission[]>([])
   const [premiumRequests, setPremiumRequests] = useState<PremiumRequest[]>([])
   const [adminReviews, setAdminReviews] = useState<AdminReview[]>([])
@@ -358,6 +361,7 @@ function App() {
   const { toKes, rateDate } = useExchangeRates()
   const t = (key: TranslationKey) => translations[language][key]
   const isArabic = language === 'ar'
+  const isExampleListing = import.meta.env.DEV && !isSupabaseConfigured
 
   useEffect(() => {
     document.documentElement.lang = language
@@ -1334,6 +1338,60 @@ function App() {
   }
 
   const renderPage = () => {
+    if (page === 'help') {
+      return (
+        <main className="page-shell">
+          <PageHeading
+            eyebrow={isArabic ? 'نحن هنا للمساعدة' : 'We’re here to help'}
+            title={isArabic ? 'المساعدة والسلامة' : 'Help & safety'}
+            description={isArabic
+              ? 'تواصل مع فريق GulfBridge واحصل على إرشادات للتقديم بأمان.'
+              : 'Contact the GulfBridge team and find practical guidance for a safer job search.'}
+            onBack={goBack}
+            backLabel={t('back')}
+          />
+          <section className="help-contact-grid" aria-label={isArabic ? 'طرق التواصل' : 'Contact options'}>
+            <a className="panel help-contact-card" href="mailto:gulfbridgeworld@gmail.com?subject=GulfBridge%20support">
+              <span className="feature-icon"><Mail size={20} /></span>
+              <span><strong>{isArabic ? 'راسلنا عبر البريد الإلكتروني' : 'Email our team'}</strong><small>gulfbridgeworld@gmail.com</small></span>
+              <ArrowUpRight size={16} />
+            </a>
+            <a className="panel help-contact-card" href="https://wa.me/254736677630?text=Hello%20GulfBridge%2C%20I%20need%20help." target="_blank" rel="noopener noreferrer">
+              <span className="feature-icon"><MessageCircle size={20} /></span>
+              <span><strong>{isArabic ? 'تواصل معنا عبر واتساب' : 'Chat with us on WhatsApp'}</strong><small>+254 736 677 630</small></span>
+              <ArrowUpRight size={16} />
+            </a>
+          </section>
+          <section className="panel help-safety-panel">
+            <div className="panel-heading">
+              <span className="feature-icon"><ShieldCheck size={20} /></span>
+              <div><span className="eyebrow">{isArabic ? 'قبل قبول أي عرض' : 'Before accepting an offer'}</span><h2>{isArabic ? 'خطوات تساعدك على البقاء بأمان' : 'Keep your job search safe'}</h2></div>
+            </div>
+            <ul className="help-safety-list">
+              {isArabic ? <>
+                <li>تحقق من هوية صاحب العمل ووكالة التوظيف عبر قنوات رسمية ومستقلة.</li>
+                <li>اطلب عقدًا مكتوبًا يوضح الراتب وساعات العمل والخصومات والسكن والسفر.</li>
+                <li>لا ترسل أموالًا إلى أفراد أو حسابات غير رسمية، وتحقق بشكل مستقل من أي رسوم قانونية.</li>
+                <li>احتفظ بجواز سفرك ووثائقك الأصلية، وشارك تفاصيل رحلتك مع شخص تثق به.</li>
+                <li>مراجعة GulfBridge للمنصة ليست اعتمادًا حكوميًا ولا تضمن سلوك صاحب العمل.</li>
+              </> : <>
+                <li>Verify the employer and recruitment agency independently through official channels.</li>
+                <li>Get a written contract covering pay, working hours, deductions, accommodation, and travel.</li>
+                <li>Never send money to an individual or unofficial account; independently verify any lawful fees.</li>
+                <li>Keep your passport and original documents, and share your travel plans with someone you trust.</li>
+                <li>A GulfBridge platform review is not government endorsement and cannot guarantee an employer’s conduct.</li>
+              </>}
+            </ul>
+            <p className="help-emergency-note">
+              {isArabic
+                ? 'إذا كنت في خطر فوري، اتصل بخدمات الطوارئ المحلية أو بسفارة بلدك.'
+                : 'If you are in immediate danger, contact local emergency services or your country’s embassy.'}
+            </p>
+          </section>
+        </main>
+      )
+    }
+
     if (page === 'map') {
       return (
         <main className="page-shell">
@@ -1360,8 +1418,10 @@ function App() {
             onSearch={setJobSearch}
             search={jobSearch}
           />
-          <p className="result-count">{listing.length} opportunities · Sample listings until your Supabase project is connected</p>
-          {listing.length ? <div className="job-grid">{listing.map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} />)}</div> : <EmptyState title="No jobs match these filters" description="Try another destination, category, or search term." action="Clear filters" onAction={() => { setDestinationFilter('All destinations'); setCategoryFilter('All fields'); setVerifiedOnly(false); setJobSearch('') }} />}
+          <p className="result-count">{listing.length} {listing.length === 1 ? 'opportunity' : 'opportunities'}</p>
+          {listing.length ? <div className="job-grid">{listing.map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} isExample={isExampleListing} />)}</div> : page === 'jobs' && jobs.length === 0
+            ? <EmptyState title="No new opportunities just yet" description="New listings appear here after review. Check back soon or get in touch with our team." action="Help & safety" onAction={() => navigate('help')} />
+            : <EmptyState title="No jobs match these filters" description="Try another destination, category, or search term." action="Clear filters" onAction={() => { setDestinationFilter('All destinations'); setCategoryFilter('All fields'); setVerifiedOnly(false); setJobSearch('') }} />}
         </main>
       )
     }
@@ -1461,9 +1521,9 @@ function App() {
                 <button className="button button-gold" type="submit">{t('search')} <ArrowRight size={16} /></button>
               </form>
               <form className="ai-box" onSubmit={handleAIMatch}>
-                <div className="ai-label"><span className="ai-spark"><Sparkles size={17} /></span><span>{t('aiPrompt')} <small>Skill match preview</small></span></div>
+                <div className="ai-label"><span className="ai-spark"><Sparkles size={17} /></span><span>{t('aiPrompt')} <small>Keyword matching</small></span></div>
                 <div className="ai-input-row"><label className="sr-only" htmlFor="ai-job-prompt">{t('aiPlaceholder')}</label><input id="ai-job-prompt" value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} placeholder={t('aiPlaceholder')} /><button type="submit" className="button button-glass"><Sparkles size={16} /> {t('match')}</button></div>
-                <p className="ai-disclaimer">Preview matches listing keywords. Identity documents are never sent to AI. A production AI provider must be configured before this becomes semantic AI matching.</p>
+                <p className="ai-disclaimer">Matches your search with listing details. Your identity documents are never sent.</p>
               </form>
               <div className="destination-chips" aria-label="Popular destinations">
                 {destinations.slice(1).map((destination) => <button key={destination} className={`destination-chip ${destinationFilter === destination ? 'selected' : ''}`} onClick={() => { setDestinationFilter(destination); navigate('jobs') }} type="button"><span className="country-monogram">{countries[destination]}</span>{destination}</button>)}
@@ -1479,17 +1539,18 @@ function App() {
               <button className="text-button" onClick={() => navigate('jobs')} type="button">{t('seeAll')} <ArrowRight size={16} /></button>
             </div>
             <div className="featured-layout">
-              <div className="job-grid">{jobs.slice(0, 3).map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} />)}</div>
+              {jobs.length
+                ? <div className="job-grid">{jobs.slice(0, 3).map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} isExample={isExampleListing} />)}</div>
+                : <div className="panel featured-empty-state"><span className="feature-icon"><BriefcaseBusiness size={20} /></span><h3>No new opportunities just yet</h3><p>New listings appear here after review. Check back soon or get in touch with our team.</p><button className="button button-outline" onClick={() => navigate('help')} type="button">Help & safety <ArrowRight size={15} /></button></div>}
               <aside className="trust-card">
                 <div className="trust-icon"><ShieldCheck size={26} /></div>
                 <span className="eyebrow">The GulfBridge standard</span>
                 <h3>{t('trustTitle')}</h3>
                 <p>{t('trustDescription')}</p>
-                <button className="button button-outline" onClick={() => setNotice('Every listing is reviewed before publication. Report suspicious posts from their detail page.')} type="button">How verification works <ArrowUpRight size={15} /></button>
+                <button className="button button-outline" onClick={() => navigate('help')} type="button">How verification works <ArrowUpRight size={15} /></button>
               </aside>
             </div>
             <p className="salary-note"><CircleHelp size={15} /> {t('salaryNote')} {rateDate ? `Rate data updated ${new Date(rateDate).toLocaleDateString()}.` : 'KSh estimates appear when a public rate is available.'}</p>
-            <div className="demo-banner"><span className="demo-pulse" /> Sample listings shown. Connect Supabase and add admin-approved jobs to publish real opportunities.</div>
           </section>
 
           <section className="home-section how-section">
@@ -1516,6 +1577,7 @@ function App() {
           <button className={page === 'jobs' ? 'active' : ''} onClick={() => navigate('jobs')} type="button">{t('navJobs')}</button>
           <button className={page === 'map' ? 'active' : ''} onClick={() => navigate('map')} type="button">{t('navMap')}</button>
           <button className={page === 'recruiter' ? 'active' : ''} onClick={openPostJob} type="button">{t('navEmployers')}</button>
+          <button className={page === 'help' ? 'active' : ''} onClick={() => navigate('help')} type="button">{t('navHelp')}</button>
           {account && <button className={page === 'applications' ? 'active' : ''} onClick={() => navigate('applications')} type="button">{t('applications')}</button>}
         </nav>
         <div className="header-actions">
@@ -1533,9 +1595,9 @@ function App() {
         <div className="footer-main">
           <a className="brand footer-brand" href="#" onClick={(event) => { event.preventDefault(); navigate('home') }}><span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span></a>
           <p>Clearer routes to work abroad. Built for Kenyan job seekers and responsible employers.</p>
-          <div className="footer-links"><button onClick={() => navigate('jobs')} type="button">Find jobs</button><button onClick={() => navigate('map')} type="button">Explore map</button><button onClick={openPostJob} type="button">For employers</button><button onClick={() => setNotice('GulfBridge support contact will be configured before production launch.')} type="button">Help & safety</button></div>
+          <div className="footer-links"><button onClick={() => navigate('jobs')} type="button">Find jobs</button><button onClick={() => navigate('map')} type="button">Explore map</button><button onClick={openPostJob} type="button">For employers</button><button onClick={() => navigate('help')} type="button">{t('navHelp')}</button></div>
         </div>
-        <div className="footer-bottom"><span>© {new Date().getFullYear()} GulfBridge</span><span>Sample interface · Verify every offer and contract independently</span><span className="footer-secure"><ShieldCheck size={14} /> Privacy-first by design</span></div>
+        <div className="footer-bottom"><span>© {new Date().getFullYear()} GulfBridge</span><span>Verify every offer and contract independently</span><span className="footer-secure"><ShieldCheck size={14} /> Privacy-first by design</span></div>
       </footer>
 
       <div className="mobile-bottom-nav">
@@ -1560,13 +1622,14 @@ type JobCardProps = {
   job: Job
   index: number
   isSaved: boolean
+  isExample: boolean
   onOpen: (job: Job) => void
   onSave: (job: Job) => void
   t: (key: TranslationKey) => string
   toKes: (amount: number, currency: string) => number | null
 }
 
-function JobCard({ job, index, isSaved, onOpen, onSave, t, toKes }: JobCardProps) {
+function JobCard({ job, index, isSaved, isExample, onOpen, onSave, t, toKes }: JobCardProps) {
   return (
     <article className={`job-card job-card-${index % 3}`}>
       <div className="job-card-top">
@@ -1582,7 +1645,7 @@ function JobCard({ job, index, isSaved, onOpen, onSave, t, toKes }: JobCardProps
         <span className="posted-time">{job.posted}</span>
       </div>
       <button className="job-card-open" onClick={() => onOpen(job)} type="button">View details <ArrowRight size={14} /></button>
-      <span className="sample-listing">{t('sample')}</span>
+      {isExample && <span className="example-listing">{t('sample')}</span>}
     </article>
   )
 }
