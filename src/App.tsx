@@ -39,7 +39,7 @@ import { configurationMessage, isSupabaseConfigured, supabase } from './lib/supa
 import './App.css'
 
 type Language = 'en' | 'ar'
-type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help' | 'guides'
+type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help' | 'guides' | 'alerts'
 type Theme = 'dark' | 'light'
 type JobAlert = {
   id: string
@@ -168,7 +168,7 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides']
+const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides', 'alerts']
 
 const countryHighlights = [
   { country: 'United Arab Emirates', city: 'Dubai', flag: '🇦🇪', code: 'UAE' },
@@ -2312,6 +2312,68 @@ function AdminPaymentCard({ payment, onConfirm }: { payment: PaymentReview; onCo
 
 function AdminPremiumCard({ request, onConfirm }: { request: PremiumRequest; onConfirm: (request: PremiumRequest) => void }) {
   return <article className="submission-card"><div className="submission-card-heading"><div><h3>{request.employer_market === 'kenyan_agency' ? 'Kenyan agency' : 'Gulf employer'} · {formatMoney(request.payment_amount, request.payment_currency)}</h3><p>Reference: {request.payment_reference || 'Not provided'} · {request.payment_method || 'Method not provided'}</p></div><span className="status-pill">{request.status.replaceAll('_', ' ')}</span></div><button className="button button-gold" type="button" onClick={() => onConfirm(request)}>Confirm premium payment</button></article>
+}
+
+function AdminJobCard({ job, onSave, onArchive }: { job: AdminJob; onSave: (id: string, values: AdminJobUpdate) => void; onArchive: (id: string) => void }) {
+  const [editing, setEditing] = useState(false)
+
+  const saveJob = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    const values = new FormData(form)
+    const salaryMin = Number(values.get('salary_min'))
+    const salaryMax = Number(values.get('salary_max'))
+    if (salaryMax < salaryMin) {
+      form.querySelector<HTMLInputElement>('[name="salary_max"]')?.setCustomValidity('Maximum salary must be at least the minimum salary.')
+      form.reportValidity()
+      return
+    }
+
+    onSave(job.id, {
+      job_title: String(values.get('job_title') || '').trim(),
+      agency_name: String(values.get('agency_name') || '').trim(),
+      country: String(values.get('country') || '').trim(),
+      city: String(values.get('city') || '').trim(),
+      category: String(values.get('category') || '').trim(),
+      employment_type: String(values.get('employment_type') || ''),
+      description: String(values.get('description') || '').trim(),
+      salary_min: salaryMin,
+      salary_max: salaryMax,
+      salary_currency: String(values.get('salary_currency') || '').trim().toUpperCase(),
+    })
+    setEditing(false)
+  }
+
+  return (
+    <article className="submission-card">
+      <div className="submission-card-heading">
+        <div><h3>{job.job_title}</h3><p>{job.agency_name} · {job.city}, {job.country} · {job.salary_currency} {job.salary_min}–{job.salary_max}</p></div>
+        <span className="status-pill">{job.employment_type}</span>
+      </div>
+      {editing ? (
+        <form className="stack-form" onSubmit={saveJob}>
+          <div className="form-grid">
+            <label className="form-label">Job title<input name="job_title" defaultValue={job.job_title} required maxLength={180} /></label>
+            <label className="form-label">Employer or agency<input name="agency_name" defaultValue={job.agency_name} required maxLength={180} /></label>
+            <label className="form-label">Country<input name="country" defaultValue={job.country} required maxLength={100} /></label>
+            <label className="form-label">City<input name="city" defaultValue={job.city} required maxLength={100} /></label>
+            <label className="form-label">Category<input name="category" defaultValue={job.category} required maxLength={80} /></label>
+            <label className="form-label">Employment type<select name="employment_type" defaultValue={job.employment_type} required>{['Full time', 'Part time', 'Contract', 'Seasonal'].map((type) => <option key={type}>{type}</option>)}</select></label>
+            <label className="form-label">Salary from<input name="salary_min" type="number" min="0" defaultValue={job.salary_min} required onChange={(event) => event.currentTarget.form?.querySelector<HTMLInputElement>('[name="salary_max"]')?.setCustomValidity('')} /></label>
+            <label className="form-label">Salary to<input name="salary_max" type="number" min="0" defaultValue={job.salary_max} required onChange={(event) => event.currentTarget.setCustomValidity('')} /></label>
+            <label className="form-label">Currency<input name="salary_currency" defaultValue={job.salary_currency} required maxLength={3} minLength={3} /></label>
+          </div>
+          <label className="form-label">Description<textarea name="description" rows={4} defaultValue={job.description} required minLength={30} maxLength={8000} /></label>
+          <div className="review-actions"><button className="button button-gold" type="submit">Save changes</button><button className="button button-outline" type="button" onClick={() => setEditing(false)}>Cancel</button></div>
+        </form>
+      ) : (
+        <>
+          <p className="fine-print">{job.description}</p>
+          <div className="review-actions"><button className="button button-outline" type="button" onClick={() => setEditing(true)}>Edit listing</button><button className="button button-danger" type="button" onClick={() => { if (window.confirm(`Remove "${job.job_title}" from public listings? Existing applications will be preserved.`)) onArchive(job.id) }}>Archive listing</button></div>
+        </>
+      )}
+    </article>
+  )
 }
 
 function AdminApplicationCard({ application, onUpdate }: { application: AdminApplication; onUpdate: (applicationId: string, status: string, asAdmin: boolean) => void }) {
