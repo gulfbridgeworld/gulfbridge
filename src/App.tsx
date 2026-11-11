@@ -6,7 +6,9 @@ import {
   ArrowRight,
   ArrowUpRight,
   BadgeCheck,
+  BellRing,
   BriefcaseBusiness,
+  BookOpen,
   Check,
   ChevronDown,
   CircleHelp,
@@ -16,10 +18,13 @@ import {
   Heart,
   Languages,
   LockKeyhole,
+  Menu as MenuIcon,
   Mail,
   MapPin,
-  Menu,
+  Moon,
   MessageCircle,
+  Plane,
+  Sun,
   Search,
   ShieldCheck,
   Sparkles,
@@ -34,7 +39,50 @@ import { configurationMessage, isSupabaseConfigured, supabase } from './lib/supa
 import './App.css'
 
 type Language = 'en' | 'ar'
-type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help'
+type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help' | 'guides'
+type Theme = 'dark' | 'light'
+type JobAlert = {
+  id: string
+  user_id: string
+  email: string
+  keyword: string
+  country: string | null
+  category: string | null
+  employment_type: string | null
+  channels: string[]
+  enabled: boolean
+  created_at: string
+}
+type JobNotification = {
+  id: string
+  job_id: string
+  title: string
+  body: string
+  read_at: string | null
+  created_at: string
+}
+type AdminJob = {
+  id: string
+  job_title: string
+  agency_name: string
+  country: string
+  city: string
+  category: string
+  employment_type: string
+  description: string
+  salary_min: number
+  salary_max: number
+  salary_currency: string
+  review_status: string
+  payment_status: string
+  published_at: string | null
+  expires_at: string | null
+}
+type AdminJobUpdate = Pick<AdminJob, 'job_title' | 'agency_name' | 'country' | 'city' | 'category' | 'employment_type' | 'description' | 'salary_min' | 'salary_max' | 'salary_currency'>
+type AdminProfile = { id: string; email: string; full_name: string; phone: string; location: string; created_at: string; disabled: boolean; roles: string[] }
+type AdminCategory = { name: string; is_active: boolean }
+type AdminNews = { id: string; title: string; summary: string; country: string | null; source_url: string | null; is_published: boolean; published_at: string | null; created_at: string }
+type AdminScamReport = { id: string; job_id: string | null; employer_name: string; details: string; status: string; created_at: string }
 type Account = {
   id: string
   email: string
@@ -120,7 +168,27 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help']
+const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides']
+
+const countryHighlights = [
+  { country: 'United Arab Emirates', city: 'Dubai', flag: '🇦🇪', code: 'UAE' },
+  { country: 'Qatar', city: 'Doha', flag: '🇶🇦', code: 'Qatar' },
+  { country: 'Saudi Arabia', city: 'Riyadh', flag: '🇸🇦', code: 'Saudi Arabia' },
+  { country: 'Canada', city: 'Toronto', flag: '🇨🇦', code: 'Canada' },
+  { country: 'United Kingdom', city: 'London', flag: '🇬🇧', code: 'United Kingdom' },
+  { country: 'Germany', city: 'Berlin', flag: '🇩🇪', code: 'Germany' },
+  { country: 'Australia', city: 'Sydney', flag: '🇦🇺', code: 'Australia' },
+  { country: 'Poland', city: 'Warsaw', flag: '🇵🇱', code: 'Poland' },
+  { country: 'United States', city: 'New York', flag: '🇺🇸', code: 'USA' },
+]
+
+const careerGuides = [
+  { icon: BriefcaseBusiness, title: 'How to apply for jobs abroad', description: 'Prepare a clear CV, check the job requirements, and follow each application step.' },
+  { icon: MessageCircle, title: 'Interview preparation', description: 'Practice examples from your experience and prepare thoughtful questions for the employer.' },
+  { icon: Globe2, title: 'Living and working abroad', description: 'Research local work rules, expected living costs, and the details of your written contract.' },
+  { icon: WalletCards, title: 'Understand your salary', description: 'Compare the stated currency, pay period, deductions, accommodation, and other benefits.' },
+  { icon: ShieldCheck, title: 'Avoiding job scams', description: 'Verify employers independently and be cautious of requests for unofficial upfront fees.' },
+]
 
 function isAppPage(value: unknown): value is Page {
   return typeof value === 'string' && appPages.includes(value as Page)
@@ -256,6 +324,10 @@ const countries: Record<string, string> = {
   Bahrain: 'BH',
   Canada: 'CA',
   'United States': 'US',
+  'United Kingdom': 'UK',
+  Germany: 'DE',
+  Australia: 'AU',
+  Poland: 'PL',
 }
 
 const cityCoordinates: Record<string, [number, number]> = {
@@ -328,6 +400,7 @@ function getInitials(value: string) {
 
 function App() {
   const [language, setLanguage] = useState<Language>('en')
+  const [theme, setTheme] = useState<Theme>('dark')
   const [page, setPage] = useState<Page>('home')
   const [account, setAccount] = useState<Account | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
@@ -352,6 +425,13 @@ function App() {
   const [adminPayments, setAdminPayments] = useState<PaymentReview[]>([])
   const [adminPremiumRequests, setAdminPremiumRequests] = useState<PremiumRequest[]>([])
   const [adminApplications, setAdminApplications] = useState<AdminApplication[]>([])
+  const [jobAlerts, setJobAlerts] = useState<JobAlert[]>([])
+  const [jobNotifications, setJobNotifications] = useState<JobNotification[]>([])
+  const [adminJobs, setAdminJobs] = useState<AdminJob[]>([])
+  const [adminProfiles, setAdminProfiles] = useState<AdminProfile[]>([])
+  const [adminCategories, setAdminCategories] = useState<AdminCategory[]>([])
+  const [adminNews, setAdminNews] = useState<AdminNews[]>([])
+  const [adminScamReports, setAdminScamReports] = useState<AdminScamReport[]>([])
   const [notice, setNotice] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -367,6 +447,11 @@ function App() {
     document.documentElement.lang = language
     document.documentElement.dir = isArabic ? 'rtl' : 'ltr'
   }, [language, isArabic])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#080b12' : '#f3f6fb')
+  }, [theme])
 
   useEffect(() => {
     window.history.replaceState({ ...window.history.state, gulfbridgePage: 'home' }, '')
@@ -505,6 +590,42 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!supabase || !account || account.id.startsWith('demo-')) return
+    const client = supabase
+    if (page === 'alerts') {
+      void Promise.all([
+        client.from('job_alerts').select('id,user_id,email,keyword,country,category,employment_type,channels,enabled,created_at').order('created_at', { ascending: false }),
+        client.from('user_notifications').select('id,job_id,title,body,read_at,created_at').order('created_at', { ascending: false }).limit(50),
+      ]).then(([alertsResult, notificationsResult]) => {
+        if (alertsResult.error) setNotice(`Could not load your job alerts: ${alertsResult.error.message}`)
+        else setJobAlerts((alertsResult.data || []) as JobAlert[])
+        if (notificationsResult.error) setNotice(`Could not load notifications: ${notificationsResult.error.message}`)
+        else setJobNotifications((notificationsResult.data || []) as JobNotification[])
+      })
+    }
+
+    const channel = client.channel(`job-alerts-${account.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'user_notifications',
+        filter: `user_id=eq.${account.id}`,
+      }, (payload) => {
+        const notification = payload.new as JobNotification
+        setJobNotifications((current) => [notification, ...current.filter((item) => item.id !== notification.id)].slice(0, 50))
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(notification.title, { body: notification.body, icon: '/icons/app-192.png' })
+        }
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setNotice('Live job alerts are temporarily unavailable. Your saved alerts remain active.')
+        }
+      })
+    return () => { void client.removeChannel(channel) }
+  }, [page, account?.id])
+
+  useEffect(() => {
     if (!supabase || !account || account.id.startsWith('demo-') || page !== 'recruiter') return
     let active = true
     void Promise.all([
@@ -549,6 +670,32 @@ function App() {
       const { data: appData, error: appError } = await client.from('admin_applications').select('application_id,job_id,status,updated_at,applicant_name,job_title,company').order('updated_at', { ascending: false })
       if (appError) setNotice(`Could not load application oversight: ${appError.message}`)
       else setAdminApplications((appData || []) as AdminApplication[])
+    })
+    return () => { active = false }
+  }, [page, account?.id, account?.roles])
+
+  useEffect(() => {
+    if (!supabase || !account?.roles.includes('admin') || page !== 'admin') return
+    const client = supabase
+    let active = true
+    void Promise.all([
+      client.from('job_submissions').select('id,job_title,agency_name,country,city,category,employment_type,description,salary_min,salary_max,salary_currency,review_status,payment_status,published_at,expires_at').eq('review_status', 'approved').eq('payment_status', 'paid').not('published_at', 'is', null).order('created_at', { ascending: false }).limit(100),
+      client.functions.invoke('admin-users', { body: { action: 'list' } }),
+      client.from('job_categories').select('name,is_active').order('name'),
+      client.from('overseas_news').select('id,title,summary,country,source_url,is_published,published_at,created_at').order('created_at', { ascending: false }).limit(50),
+      client.from('scam_reports').select('id,job_id,employer_name,details,status,created_at').order('created_at', { ascending: false }).limit(100),
+    ]).then(([jobsResult, usersResult, categoriesResult, newsResult, reportsResult]) => {
+      if (!active) return
+      if (jobsResult.error) setNotice(`Could not load job management: ${jobsResult.error.message}`)
+      else setAdminJobs((jobsResult.data || []) as AdminJob[])
+      if (usersResult.error) setNotice(`Could not load registered users: ${usersResult.error.message}`)
+      else setAdminProfiles(((usersResult.data as { users: AdminProfile[] } | null)?.users || []))
+      if (categoriesResult.error) setNotice(`Could not load job categories: ${categoriesResult.error.message}`)
+      else setAdminCategories((categoriesResult.data || []) as AdminCategory[])
+      if (newsResult.error) setNotice(`Could not load overseas news: ${newsResult.error.message}`)
+      else setAdminNews((newsResult.data || []) as AdminNews[])
+      if (reportsResult.error) setNotice(`Could not load scam reports: ${reportsResult.error.message}`)
+      else setAdminScamReports((reportsResult.data || []) as AdminScamReport[])
     })
     return () => { active = false }
   }, [page, account?.id, account?.roles])
@@ -693,7 +840,7 @@ function App() {
 
   const navigate = (nextPage: Page) => {
     setMenuOpen(false)
-    if (['profile', 'saved', 'applications'].includes(nextPage) && !requireSignIn()) return
+    if (['profile', 'saved', 'applications', 'alerts'].includes(nextPage) && !requireSignIn()) return
     if (nextPage === 'recruiter' && !requireSignIn()) return
     if (nextPage === 'admin' && (!account || !account.roles.includes('admin'))) {
       setNotice('Admin review is available only to authorized admin accounts.')
@@ -727,6 +874,69 @@ function App() {
     event.preventDefault()
     navigate('jobs')
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const createJobAlert = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    if (!supabase || !account || account.id.startsWith('demo-')) {
+      setNotice('Sign in with a connected GulfBridge account to save job alerts.')
+      return
+    }
+    const form = new FormData(formElement)
+    const channels = form.getAll('channels').map(String)
+    if (!channels.length) {
+      setNotice('Choose at least one way to receive matching job alerts.')
+      return
+    }
+    const { data, error } = await supabase.from('job_alerts').insert({
+      user_id: account.id,
+      email: account.email,
+      keyword: String(form.get('keyword') || '').trim(),
+      country: String(form.get('country') || '') || null,
+      category: String(form.get('category') || '') || null,
+      employment_type: String(form.get('employmentType') || '') || null,
+      channels,
+    }).select('id,user_id,email,keyword,country,category,employment_type,channels,enabled,created_at').single()
+    if (error) {
+      setNotice(`Job alert could not be saved: ${error.message}`)
+      return
+    }
+    setJobAlerts((current) => [data as JobAlert, ...current])
+    formElement.reset()
+    setNotice('Job alert saved. Matching published opportunities will appear in your notifications.')
+  }
+
+  const deleteJobAlert = async (id: string) => {
+    if (!supabase) return
+    const { error } = await supabase.from('job_alerts').delete().eq('id', id)
+    if (error) {
+      setNotice(`Job alert could not be deleted: ${error.message}`)
+      return
+    }
+    setJobAlerts((current) => current.filter((alert) => alert.id !== id))
+  }
+
+  const markNotificationRead = async (notification: JobNotification) => {
+    if (!supabase || notification.read_at) return
+    const readAt = new Date().toISOString()
+    const { error } = await supabase.from('user_notifications').update({ read_at: readAt }).eq('id', notification.id)
+    if (error) {
+      setNotice(`Notification could not be marked as read: ${error.message}`)
+      return
+    }
+    setJobNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read_at: readAt } : item))
+  }
+
+  const enableWebNotifications = async () => {
+    if (!('Notification' in window)) {
+      setNotice('Browser notifications are not supported on this device.')
+      return
+    }
+    const permission = await Notification.requestPermission()
+    setNotice(permission === 'granted'
+      ? 'Browser notifications are enabled for this device.'
+      : 'Browser notifications were not enabled. You can still view job alerts in your GulfBridge inbox.')
   }
 
   const handleAIMatch = (event: FormEvent<HTMLFormElement>) => {
@@ -1337,7 +1547,213 @@ function App() {
     setNotice(asAdmin ? 'Admin override recorded in the application timeline.' : 'Application progress updated.')
   }
 
+  const updateAdminJob = async (id: string, values: AdminJobUpdate) => {
+    if (!supabase) return
+    const { error } = await supabase.from('job_submissions').update(values).eq('id', id)
+    if (error) {
+      setNotice(`Job could not be updated: ${error.message}`)
+      return
+    }
+    setAdminJobs((current) => current.map((job) => job.id === id ? { ...job, ...values } : job))
+    setJobs((current) => current.map((job) => job.id === id ? {
+      ...job,
+      title: values.job_title,
+      company: values.agency_name,
+      country: values.country,
+      city: values.city,
+      category: values.category,
+      employmentType: values.employment_type,
+      description: values.description,
+      salaryMin: values.salary_min,
+      salaryMax: values.salary_max,
+      currency: values.salary_currency as Job['currency'],
+    } : job))
+    setNotice('Job listing updated.')
+  }
+
+  const archiveAdminJob = async (id: string) => {
+    if (!supabase) return
+    const { error } = await supabase.from('job_submissions').update({ expires_at: new Date().toISOString() }).eq('id', id)
+    if (error) {
+      setNotice(`Job could not be removed from public listings: ${error.message}`)
+      return
+    }
+    setAdminJobs((current) => current.filter((job) => job.id !== id))
+    setJobs((current) => current.filter((job) => job.id !== id))
+    setNotice('Job removed from public listings. Existing application records are preserved.')
+  }
+
+  const createAdminCategory = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    if (!supabase) return
+    const name = String(new FormData(formElement).get('name') || '').trim()
+    if (!name) return
+    const { data, error } = await supabase.from('job_categories').insert({ name }).select('name,is_active').single()
+    if (error) {
+      setNotice(`Category could not be added: ${error.message}`)
+      return
+    }
+    setAdminCategories((current) => [...current, data as AdminCategory].sort((a, b) => a.name.localeCompare(b.name)))
+    formElement.reset()
+  }
+
+  const toggleAdminCategory = async (category: AdminCategory) => {
+    if (!supabase) return
+    const { error } = await supabase.from('job_categories').update({ is_active: !category.is_active }).eq('name', category.name)
+    if (error) {
+      setNotice(`Category could not be updated: ${error.message}`)
+      return
+    }
+    setAdminCategories((current) => current.map((item) => item.name === category.name ? { ...item, is_active: !item.is_active } : item))
+  }
+
+  const createOverseasNews = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    if (!supabase || !account) return
+    const values = new FormData(formElement)
+    const isPublished = values.get('publish') === 'on'
+    const { data, error } = await supabase.from('overseas_news').insert({
+      title: String(values.get('title') || '').trim(),
+      summary: String(values.get('summary') || '').trim(),
+      country: String(values.get('country') || '') || null,
+      source_url: String(values.get('sourceUrl') || '').trim() || null,
+      is_published: isPublished,
+      published_at: isPublished ? new Date().toISOString() : null,
+      created_by: account.id,
+    }).select('id,title,summary,country,source_url,is_published,published_at,created_at').single()
+    if (error) {
+      setNotice(`News item could not be created: ${error.message}`)
+      return
+    }
+    setAdminNews((current) => [data as AdminNews, ...current])
+    formElement.reset()
+  }
+
+  const toggleNewsVisibility = async (news: AdminNews) => {
+    if (!supabase) return
+    const isPublished = !news.is_published
+    const { error } = await supabase.from('overseas_news').update({
+      is_published: isPublished,
+      published_at: isPublished ? new Date().toISOString() : null,
+    }).eq('id', news.id)
+    if (error) {
+      setNotice(`News visibility could not be changed: ${error.message}`)
+      return
+    }
+    setAdminNews((current) => current.map((item) => item.id === news.id ? { ...item, is_published: isPublished, published_at: isPublished ? new Date().toISOString() : null } : item))
+  }
+
+  const deleteOverseasNews = async (id: string) => {
+    if (!supabase) return
+    const { error } = await supabase.from('overseas_news').delete().eq('id', id)
+    if (error) {
+      setNotice(`News item could not be deleted: ${error.message}`)
+      return
+    }
+    setAdminNews((current) => current.filter((item) => item.id !== id))
+  }
+
+  const updateScamReport = async (report: AdminScamReport, status: string) => {
+    if (!supabase || !account) return
+    const { error } = await supabase.from('scam_reports').update({
+      status,
+      reviewed_by: account.id,
+    }).eq('id', report.id)
+    if (error) {
+      setNotice(`Scam report could not be updated: ${error.message}`)
+      return
+    }
+    setAdminScamReports((current) => current.map((item) => item.id === report.id ? { ...item, status } : item))
+  }
+
+  const setAdminUserDisabled = async (profile: AdminProfile) => {
+    if (!supabase) return
+    const disabled = !profile.disabled
+    const { error } = await supabase.functions.invoke('admin-users', {
+      body: { action: 'set-disabled', userId: profile.id, disabled },
+    })
+    if (error) {
+      setNotice(`Account status could not be changed: ${error.message}`)
+      return
+    }
+    setAdminProfiles((current) => current.map((user) => user.id === profile.id ? { ...user, disabled } : user))
+    setNotice(disabled ? 'User account access has been suspended.' : 'User account access has been restored.')
+  }
+
   const renderPage = () => {
+    if (page === 'alerts') {
+      return (
+        <main className="page-shell">
+          <PageHeading eyebrow="Your opportunities" title="Job alerts & notifications" description="Save the roles and destinations you care about. We’ll show matching new listings in your GulfBridge inbox." onBack={goBack} backLabel={t('back')} />
+          <div className="alerts-layout">
+            <section className="panel alert-create-panel">
+              <div className="panel-heading"><div><span className="eyebrow">Personalize your search</span><h2>Create a job alert</h2></div><BellRing size={20} /></div>
+              <form className="stack-form" onSubmit={createJobAlert}>
+                <label className="form-label">Job title or keyword<input name="keyword" placeholder="e.g. nurse, driver, hospitality" /></label>
+                <div className="form-grid">
+                  <label className="form-label">Country<select name="country" defaultValue=""><option value="">Any country</option>{countryHighlights.map(({ country }) => <option key={country} value={country}>{country}</option>)}</select></label>
+                  <label className="form-label">Category<select name="category" defaultValue=""><option value="">Any category</option>{categoryNames.slice(1).map((category) => <option key={category}>{category}</option>)}</select></label>
+                  <label className="form-label">Job type<select name="employmentType" defaultValue=""><option value="">Any job type</option>{['Full time', 'Contract', 'Seasonal', 'Part time'].map((type) => <option key={type}>{type}</option>)}</select></label>
+                </div>
+                <fieldset className="alert-channel-options"><legend>Notify me by</legend>
+                  <label><input type="checkbox" name="channels" value="web" defaultChecked /> GulfBridge website notifications</label>
+                  <label><input type="checkbox" name="channels" value="email" /> Email ({account?.email})</label>
+                </fieldset>
+                <p className="alert-delivery-note">Website alerts are saved to your account. Email alerts are queued securely; email delivery requires the mail service to be configured.</p>
+                <button className="button button-gold" type="submit"><BellRing size={15} /> Save job alert</button>
+              </form>
+            </section>
+            <section className="panel notification-panel">
+              <div className="panel-heading"><div><span className="eyebrow">New opportunities</span><h2>Your notifications</h2></div><button className="text-button" type="button" onClick={() => void enableWebNotifications()}><BellRing size={15} /> Enable browser alerts</button></div>
+              {jobNotifications.length ? <div className="notification-list">{jobNotifications.map((notification) => {
+                const job = jobs.find((item) => item.id === notification.job_id)
+                return <article className={`notification-item ${notification.read_at ? '' : 'unread'}`} key={notification.id}>
+                  <button className="notification-open" type="button" onClick={() => {
+                    if (job) setActiveJob(job)
+                    else setNotice('This opportunity is no longer available.')
+                    void markNotificationRead(notification)
+                  }}>
+                    <span className="notification-dot" />
+                    <span><strong>{notification.title}</strong><small>{notification.body} · {new Date(notification.created_at).toLocaleDateString()}</small></span>
+                  </button>
+                  <a className="notification-share" href={`https://wa.me/?text=${encodeURIComponent(`${notification.title} — ${notification.body} ${window.location.origin}`)}`} target="_blank" rel="noopener noreferrer" aria-label="Share job alert on WhatsApp"><MessageCircle size={16} /></a>
+                </article>
+              })}</div> : <p className="queue-empty-note">New jobs that match your saved alerts will appear here.</p>}
+            </section>
+            <section className="panel saved-alerts-panel">
+              <div className="panel-heading"><div><span className="eyebrow">Your preferences</span><h2>Saved job alerts</h2></div></div>
+              {jobAlerts.length ? jobAlerts.map((alert) => <article className="saved-alert-row" key={alert.id}>
+                <span className="guide-icon"><BellRing size={17} /></span>
+                <span><strong>{alert.keyword || 'Any matching role'}</strong><small>{[alert.country, alert.category, alert.employment_type].filter(Boolean).join(' · ') || 'All countries and categories'} · {alert.channels.join(', ')}</small></span>
+                <button className="text-button" type="button" onClick={() => void deleteJobAlert(alert.id)}>Delete</button>
+              </article>) : <p className="queue-empty-note">You haven’t saved a job alert yet.</p>}
+            </section>
+          </div>
+        </main>
+      )
+    }
+
+    if (page === 'guides') {
+      return (
+        <main className="page-shell">
+          <PageHeading eyebrow="Career guides" title="Make your next move with confidence" description="Practical guidance for preparing, applying, and working abroad." onBack={goBack} backLabel={t('back')} />
+          <div className="guide-grid">
+            {careerGuides.map(({ icon: Icon, title, description }, index) => (
+              <article className="panel guide-card" key={title}>
+                <span className="guide-icon"><Icon size={20} /></span>
+                <span className="guide-number">0{index + 1}</span>
+                <h2>{title}</h2>
+                <p>{description}</p>
+                <button className="text-button" type="button" onClick={() => navigate('help')}>Read safety guidance <ArrowRight size={15} /></button>
+              </article>
+            ))}
+          </div>
+        </main>
+      )
+    }
+
     if (page === 'help') {
       return (
         <main className="page-shell">
@@ -1405,7 +1821,7 @@ function App() {
       const listing = page === 'saved' ? jobs.filter((job) => savedIds.includes(job.id)) : filteredJobs
       return (
         <main className="page-shell">
-          <PageHeading eyebrow={page === 'saved' ? 'Your shortlist' : 'Explore opportunities'} title={page === 'saved' ? 'Saved jobs' : t('jobsHeading')} description={page === 'saved' ? 'Return to opportunities you want to review.' : t('jobsSubheading')} onBack={goBack} backLabel={t('back')} />
+          <PageHeading eyebrow={page === 'saved' ? 'Your shortlist' : 'Explore opportunities'} title={page === 'saved' ? 'Saved jobs' : t('jobsHeading')} description={page === 'saved' ? 'Return to opportunities you want to review.' : t('jobsSubheading')} action={page === 'jobs' ? <button className="button button-outline" type="button" onClick={() => navigate('alerts')}><BellRing size={15} /> Create job alert</button> : undefined} onBack={goBack} backLabel={t('back')} />
           <FilterBar
             destinations={destinations}
             categories={categoryNames}
@@ -1496,11 +1912,40 @@ function App() {
       return (
         <main className="page-shell">
           <PageHeading eyebrow="Admin console" title="Review before public" description="Approval, verification, payment confirmation, and publication stay under admin control." onBack={goBack} backLabel={t('back')} />
-          <div className="admin-stats"><StatCard value="Pending review" label="Agency and job submissions" icon={<FileCheck2 />} /><StatCard value="Admin controlled" label="Verification and publication" icon={<ShieldCheck />} /><StatCard value="30 days" label="Standard listing duration" icon={<BriefcaseBusiness />} /></div>
+          <div className="admin-stats"><StatCard value={String(adminJobs.length)} label="Published jobs managed" icon={<BriefcaseBusiness />} /><StatCard value={String(adminProfiles.length)} label="Recent registered users" icon={<UserRound />} /><StatCard value={String(adminApplications.length)} label="Applications to review" icon={<FileCheck2 />} /><StatCard value={String(adminScamReports.filter((report) => report.status === 'open' || report.status === 'investigating').length)} label="Open scam reports" icon={<ShieldCheck />} /></div>
           <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Review queue</span><h2>Agency and job submissions</h2></div><span className="status-pill status-pending">Admin approval required</span></div>{adminReviews.length ? adminReviews.map((submission) => <AdminReviewCard key={submission.id} submission={submission} onDocument={downloadAgencyDocument} onReview={reviewSubmission} />) : <EmptyState title="Review queue is clear" description={isSupabaseConfigured ? 'New submissions will appear here after employers submit their official details and job offer.' : 'Connect Supabase and sign in with an admin role to review real submissions.'} action="Back to jobs" onAction={() => navigate('jobs')} />}</section>
           <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Payment confirmation</span><h2>Listing payment references</h2></div></div>{adminPayments.length ? adminPayments.map((payment) => <AdminPaymentCard key={payment.id} payment={payment} onConfirm={confirmListingPayment} />) : <p className="queue-empty-note">No standard listing payments await confirmation.</p>}</section>
           <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Premium companies</span><h2>Premium plan payment references</h2></div></div>{adminPremiumRequests.length ? adminPremiumRequests.map((request) => <AdminPremiumCard key={request.id} request={request} onConfirm={confirmPremiumSubscription} />) : <p className="queue-empty-note">No premium plan payments await confirmation.</p>}</section>
           <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Application oversight</span><h2>Admin can review or correct progress</h2></div></div>{adminApplications.length ? adminApplications.map((application) => <AdminApplicationCard key={application.application_id} application={application} onUpdate={updateApplicationStatus} />) : <p className="queue-empty-note">No applications are available for admin oversight.</p>}</section>
+          <section className="panel admin-queue">
+            <div className="panel-heading"><div><span className="eyebrow">Live job listings</span><h2>Manage published opportunities</h2></div><div className="panel-heading-actions"><span className="status-pill">{adminJobs.length} shown</span><button className="button button-gold" type="button" onClick={() => void handleRoleSwitch('recruiter')}>Post a job</button></div></div>
+            {adminJobs.length ? adminJobs.map((job) => <AdminJobCard key={job.id} job={job} onSave={updateAdminJob} onArchive={archiveAdminJob} />) : <p className="queue-empty-note">No published jobs are available to manage.</p>}
+          </section>
+          <section className="panel admin-queue">
+            <div className="panel-heading"><div><span className="eyebrow">Registered accounts</span><h2>Recent users and access roles</h2></div><span className="status-pill">{adminProfiles.length} shown</span></div>
+            {adminProfiles.length ? <div className="admin-user-list">{adminProfiles.map((profile) => <article className="admin-user-row" key={profile.id}><span className="company-avatar">{getInitials(profile.full_name || 'GB')}</span><span><strong>{profile.full_name || 'GulfBridge member'}</strong><small>{profile.email} · {profile.phone || 'No phone'} · {profile.location || 'Location not set'}</small></span><span className="user-role-list">{profile.roles.join(', ') || 'seeker'}</span>{profile.roles.includes('admin') ? <span className="status-pill">Admin protected</span> : <button className="button button-outline" type="button" onClick={() => void setAdminUserDisabled(profile)}>{profile.disabled ? 'Restore access' : 'Suspend access'}</button>}</article>)}</div> : <p className="queue-empty-note">No registered users were found.</p>}
+            <p className="fine-print">Admin accounts are protected from suspension here. Roles and passwords are never set from this dashboard.</p>
+          </section>
+          <section className="panel admin-queue">
+            <div className="panel-heading"><div><span className="eyebrow">Job categories</span><h2>Manage categories</h2></div></div>
+            <form className="admin-inline-form" onSubmit={createAdminCategory}><label className="form-label">New category<input name="name" maxLength={80} required placeholder="e.g. Agriculture" /></label><button className="button button-gold" type="submit">Add category</button></form>
+            <div className="admin-category-list">{adminCategories.map((category) => <div className="admin-category-row" key={category.name}><span>{category.name}</span><button className="button button-outline" type="button" onClick={() => void toggleAdminCategory(category)}>{category.is_active ? 'Active' : 'Hidden'}</button></div>)}</div>
+          </section>
+          <section className="panel admin-queue">
+            <div className="panel-heading"><div><span className="eyebrow">Overseas employment news</span><h2>Publish trusted career updates</h2></div></div>
+            <form className="stack-form admin-news-form" onSubmit={createOverseasNews}>
+              <label className="form-label">Headline<input name="title" minLength={5} maxLength={180} required /></label>
+              <label className="form-label">Summary<textarea name="summary" minLength={10} maxLength={1200} rows={3} required /></label>
+              <div className="form-grid"><label className="form-label">Country<select name="country" defaultValue=""><option value="">All destinations</option>{countryHighlights.map(({ country }) => <option key={country}>{country}</option>)}</select></label><label className="form-label">Source URL<input name="sourceUrl" type="url" placeholder="https://…" /></label></div>
+              <label className="consent-check"><input name="publish" type="checkbox" /><span>Publish immediately</span></label>
+              <button className="button button-gold" type="submit">Save news item</button>
+            </form>
+            {adminNews.map((news) => <article className="submission-card" key={news.id}><div className="submission-card-heading"><div><h3>{news.title}</h3><p>{news.country || 'All destinations'} · {news.is_published ? 'Published' : 'Draft'}</p></div></div><p>{news.summary}</p><div className="review-actions"><button className="button button-outline" type="button" onClick={() => void toggleNewsVisibility(news)}>{news.is_published ? 'Unpublish' : 'Publish'}</button><button className="button button-danger" type="button" onClick={() => void deleteOverseasNews(news.id)}>Delete</button></div></article>)}
+          </section>
+          <section className="panel admin-queue">
+            <div className="panel-heading"><div><span className="eyebrow">Community safety</span><h2>Reported scams</h2></div><span className="status-pill">{adminScamReports.length} reports</span></div>
+            {adminScamReports.length ? adminScamReports.map((report) => <article className="submission-card" key={report.id}><div className="submission-card-heading"><div><h3>{report.employer_name || 'Reported listing or contact'}</h3><p>Submitted {new Date(report.created_at).toLocaleDateString()} · {report.job_id ? `Job ${report.job_id.slice(0, 8)}` : 'No job reference'}</p></div><span className="status-pill">{report.status}</span></div><p>{report.details}</p><label className="form-label">Review status<select value={report.status} onChange={(event) => void updateScamReport(report, event.target.value)}>{['open', 'investigating', 'resolved', 'dismissed'].map((status) => <option key={status}>{status}</option>)}</select></label></article>) : <p className="queue-empty-note">No scam reports have been submitted.</p>}
+          </section>
         </main>
       )
     }
@@ -1533,6 +1978,22 @@ function App() {
             <div className="hero-decoration hero-decoration-one" /><div className="hero-decoration hero-decoration-two" />
           </section>
 
+          <section className="home-section country-section">
+            <div className="country-feature-banner">
+              <div><span className="eyebrow"><Globe2 size={14} /> Explore destinations</span><h2>Jobs by country</h2><p>Find opportunities in your preferred destination.</p></div>
+              <Plane className="country-feature-plane" size={54} strokeWidth={1.4} aria-hidden="true" />
+            </div>
+            <div className="country-card-grid">
+              {countryHighlights.map(({ country, city, flag, code }) => (
+                <button className="country-card panel" key={country} type="button" onClick={() => { setDestinationFilter(country); navigate('jobs') }}>
+                  <span className="country-flag" aria-hidden="true">{flag}</span>
+                  <strong>{code}</strong>
+                  <small>{city}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section className="home-section jobs-section" id="featured-jobs">
             <div className="section-heading">
               <div><span className="eyebrow">Thoughtfully reviewed</span><h2>{t('jobsHeading')}</h2><p>{t('jobsSubheading')}</p></div>
@@ -1558,6 +2019,13 @@ function App() {
             <div className="journey-steps">{['Applied', 'Interview', 'Offer', 'Visa', 'Flight'].map((step, index) => <div className="journey-step" key={step}><span className={`journey-number ${index === 0 ? 'current' : ''}`}>{index === 0 ? <Check size={15} /> : `0${index + 1}`}</span><div><strong>{step}</strong><small>{index === 0 ? 'Start your application' : 'Updates from your employer'}</small></div></div>)}</div>
           </section>
 
+          <section className="home-section career-guides-section">
+            <div className="section-heading"><div><span className="eyebrow">Plan your next step</span><h2>Career guides</h2><p>Helpful advice for applying and building a life abroad.</p></div><button className="text-button" type="button" onClick={() => navigate('guides')}>Explore guides <ArrowRight size={16} /></button></div>
+            <div className="career-guide-teasers">
+              {careerGuides.slice(0, 3).map(({ icon: Icon, title }) => <button className="panel career-guide-teaser" key={title} type="button" onClick={() => navigate('guides')}><span className="guide-icon"><Icon size={18} /></span><strong>{title}</strong><ArrowRight size={15} /></button>)}
+            </div>
+          </section>
+
           <section className="home-section employer-cta">
             <div><span className="eyebrow">For licensed recruiters and employers</span><h2>Bring your opportunity to GulfBridge.</h2><p>Submit your organization details and job offer for review. Every job is approved before publication.</p></div>
             <button className="button button-gold" onClick={openPostJob} type="button">{t('postJob')} <ArrowRight size={16} /></button>
@@ -1573,21 +2041,32 @@ function App() {
         <a className="brand" href="#" onClick={(event) => { event.preventDefault(); navigate('home') }} aria-label="GulfBridge home">
           <span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span>
         </a>
-        <nav className={`desktop-nav ${menuOpen ? 'open' : ''}`} aria-label="Main navigation">
-          <button className={page === 'jobs' ? 'active' : ''} onClick={() => navigate('jobs')} type="button">{t('navJobs')}</button>
-          <button className={page === 'map' ? 'active' : ''} onClick={() => navigate('map')} type="button">{t('navMap')}</button>
-          <button className={page === 'recruiter' ? 'active' : ''} onClick={openPostJob} type="button">{t('navEmployers')}</button>
-          <button className={page === 'help' ? 'active' : ''} onClick={() => navigate('help')} type="button">{t('navHelp')}</button>
-          {account && <button className={page === 'applications' ? 'active' : ''} onClick={() => navigate('applications')} type="button">{t('applications')}</button>}
-        </nav>
         <div className="header-actions">
           <button className="language-toggle" onClick={() => setLanguage(isArabic ? 'en' : 'ar')} type="button" aria-label="Switch language"><Languages size={15} /><span>{t('language')}</span></button>
+          <button className="theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
           {installPrompt && <button className="button button-outline install-button" onClick={() => void installApp()} type="button"><ArrowDownToLine size={15} /><span>Install app</span></button>}
-          {account ? <div className="account-menu"><button className="avatar-button" onClick={() => navigate('profile')} type="button" aria-label="Open profile">{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button><div className="account-dropdown"><button type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : 'Job seeker view'}</button>{account.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button type="button" onClick={() => void handleSignOut()}>{t('logout')}</button></div></div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
+          {account ? <div className="account-menu"><button className="avatar-button" onClick={() => navigate('profile')} type="button" aria-label="Open profile">{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button><div className="account-dropdown"><button type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button type="button" onClick={() => navigate('alerts')}>Job alerts</button><button type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : 'Job seeker view'}</button>{account.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button type="button" onClick={() => void handleSignOut()}>{t('logout')}</button></div></div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
           <button className="button button-gold header-post" onClick={openPostJob} type="button">{t('postJob')}</button>
-          <button className="mobile-menu-button" onClick={() => setMenuOpen((open) => !open)} type="button" aria-expanded={menuOpen} aria-label="Open menu">{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
+          <button className="mobile-menu-button" onClick={() => setMenuOpen((open) => !open)} type="button" aria-expanded={menuOpen} aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}>{menuOpen ? <X size={21} /> : <MenuIcon size={21} />}</button>
         </div>
       </header>
+
+      {menuOpen && <button className="side-menu-backdrop" type="button" aria-label="Close navigation menu" onClick={() => setMenuOpen(false)} />}
+      <nav className={`side-menu ${menuOpen ? 'open' : ''}`} aria-label="Main navigation" aria-hidden={!menuOpen} inert={!menuOpen}>
+        <div className="side-menu-heading"><span>Explore GulfBridge</span><button type="button" aria-label="Close navigation menu" onClick={() => setMenuOpen(false)}><X size={18} /></button></div>
+        <button type="button" onClick={() => navigate('home')}><Globe2 size={17} /> Home</button>
+        <button type="button" onClick={() => navigate('jobs')}><Search size={17} /> Find jobs</button>
+        <button type="button" onClick={() => navigate('map')}><MapPin size={17} /> Explore map</button>
+        <button type="button" onClick={() => navigate('guides')}><BookOpen size={17} /> Career guides</button>
+        <button type="button" onClick={() => navigate('alerts')}><BellRing size={17} /> Job alerts</button>
+        <button type="button" onClick={() => navigate('help')}><ShieldCheck size={17} /> Help & safety</button>
+        <button type="button" onClick={openPostJob}><BriefcaseBusiness size={17} /> For employers</button>
+        {account && <button type="button" onClick={() => navigate('applications')}><FileCheck2 size={17} /> Applications</button>}
+        {account?.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}><LockKeyhole size={17} /> Admin workspace</button>}
+        <span className="side-menu-label">Popular destinations</span>
+        {countryHighlights.slice(0, 6).map(({ country, flag }) => <button className="side-menu-country" key={country} type="button" onClick={() => { setDestinationFilter(country); navigate('jobs') }}><span>{flag}</span>{country}</button>)}
+        <div className="side-menu-bottom"><button type="button" onClick={() => account ? navigate('profile') : setAuthOpen(true)}><UserRound size={17} /> {account ? 'My profile' : 'Sign in'}</button></div>
+      </nav>
 
       {renderPage()}
 

@@ -200,6 +200,10 @@ export const destinations = [
   'Oman',
   'Bahrain',
   'Canada',
+  'United Kingdom',
+  'Germany',
+  'Australia',
+  'Poland',
   'United States',
 ]
 
