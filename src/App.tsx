@@ -404,6 +404,7 @@ function App() {
   const [page, setPage] = useState<Page>('home')
   const [account, setAccount] = useState<Account | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
+  const [adminLoginMode, setAdminLoginMode] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authNotice, setAuthNotice] = useState('')
   const [jobSearch, setJobSearch] = useState('')
@@ -547,7 +548,7 @@ function App() {
             headline: profileResult.data?.headline || current.headline,
             skills: Array.isArray(profileResult.data?.skills) ? profileResult.data.skills.join(', ') : current.skills,
             roles: nextRoles,
-            role: nextRoles.includes('recruiter') ? 'recruiter' : 'seeker',
+            role: nextRoles.includes('admin') ? 'admin' : nextRoles.includes('recruiter') ? 'recruiter' : 'seeker',
           }
         : current)
     })
@@ -804,15 +805,28 @@ function App() {
 
   const requireSignIn = () => {
     if (account) return true
+    setAdminLoginMode(false)
     setAuthError('')
     setAuthNotice('')
     setAuthOpen(true)
     return false
   }
 
+  const openAdminAccess = () => {
+    if (account?.roles.includes('admin')) {
+      navigate('admin')
+      return
+    }
+    setAdminLoginMode(true)
+    setAuthError('')
+    setAuthNotice('Admin access requires an authorized GulfBridge account.')
+    setAuthOpen(true)
+  }
+
   const goBack = () => {
     if (authOpen) {
       setAuthOpen(false)
+      setAdminLoginMode(false)
       return
     }
     if (applyJob) {
@@ -1219,11 +1233,19 @@ function App() {
       setAuthError('Enter your email and password.')
       return
     }
+    if (adminLoginMode && mode !== 'signin') {
+      setAuthError('Admin access requires signing in to an existing authorized account.')
+      return
+    }
     if (mode === 'signup' && (!fullName || !phone)) {
       setAuthError('Name and phone number are required during registration.')
       return
     }
     if (!supabase) {
+      if (adminLoginMode) {
+        setAuthError('Admin access requires a configured Supabase project and an authorized account.')
+        return
+      }
       const demoAccount: Account = {
         id: `demo-${Date.now()}`,
         email,
@@ -1252,6 +1274,35 @@ function App() {
       : await supabase.auth.signInWithPassword({ email, password })
     if (result.error) {
       setAuthError(result.error.message)
+      return
+    }
+    if (adminLoginMode) {
+      if (!result.data.user) {
+        setAuthError('Sign-in succeeded, but the account could not be verified.')
+        return
+      }
+      setAccountFromUser(result.data.user)
+      const { data: roleRows, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
+      if (roleError) {
+        setAuthError(`Could not verify admin access: ${roleError.message}`)
+        return
+      }
+      const roles = (roleRows || [])
+        .map((row) => row.role)
+        .filter((role): role is Account['roles'][number] => ['seeker', 'recruiter', 'admin'].includes(role))
+      if (!roles.includes('admin')) {
+        setAuthError('This account does not have admin access. Ask an authorized project administrator to grant the admin role.')
+        return
+      }
+      setAccount((current) => current && current.id === result.data.user?.id
+        ? { ...current, role: 'admin', roles: Array.from(new Set<Account['roles'][number]>(['seeker', ...roles])) }
+        : current)
+      setAuthOpen(false)
+      setAdminLoginMode(false)
+      window.history.pushState({ gulfbridgePage: 'admin', previousGulfbridgePage: page }, '')
+      setPage('admin')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      setNotice('Admin access verified.')
       return
     }
     if (mode === 'signup' && !result.data.session) {
@@ -2038,7 +2089,7 @@ function App() {
   return (
     <div className={`app-root ${isArabic ? 'is-rtl' : ''}`}>
       <header className="site-header">
-        <a className="brand" href="#" onClick={(event) => { event.preventDefault(); navigate('home') }} aria-label="GulfBridge home">
+        <a className="brand" href="#admin" onClick={(event) => { event.preventDefault(); openAdminAccess() }} aria-label="GulfBridge admin sign-in" title="Admin sign-in">
           <span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span>
         </a>
         <div className="header-actions">
@@ -2089,7 +2140,7 @@ function App() {
 
       {activeJob && <JobModal job={activeJob} onClose={() => setActiveJob(null)} onApply={startApply} onSave={toggleSave} isSaved={savedIds.includes(activeJob.id)} t={t} toKes={toKes} />}
       {applyJob && <ApplyModal job={applyJob} onClose={() => setApplyJob(null)} onSubmit={submitApplication} isSubmitting={isSubmitting} />}
-      {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onSubmit={handleAuth} error={authError} notice={authNotice} configurationMessage={configurationMessage} />}
+      {authOpen && <AuthModal adminMode={adminLoginMode} onClose={() => { setAuthOpen(false); setAdminLoginMode(false) }} onSubmit={handleAuth} error={authError} notice={authNotice} configurationMessage={configurationMessage} />}
       {profileEditing && profileDraft && <ProfileModal profile={profileDraft} onChange={setProfileDraft} onClose={() => setProfileEditing(false)} onSubmit={saveProfile} t={t} />}
       {deleteConfirmOpen && <DeleteAccountModal onClose={() => setDeleteConfirmOpen(false)} onConfirm={() => void handleDeleteAccount()} isSubmitting={isSubmitting} />}
       {notice && <div className="toast" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice('')} type="button"><X size={15} /></button></div>}
@@ -2184,19 +2235,19 @@ function ApplyModal({ job, onClose, onSubmit, isSubmitting }: { job: Job; onClos
   )
 }
 
-function AuthModal({ onClose, onSubmit, error, notice, configurationMessage: configMessage }: { onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; error: string; notice: string; configurationMessage: string }) {
+function AuthModal({ onClose, onSubmit, error, notice, configurationMessage: configMessage, adminMode = false }: { onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; error: string; notice: string; configurationMessage: string; adminMode?: boolean }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   return (
     <Modal onClose={onClose} className="form-modal auth-modal">
-      <span className="eyebrow">Your GulfBridge account</span><h2>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">One account can include both job seeker and recruiter roles.</p>
-      <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>
+      <span className="eyebrow">{adminMode ? 'Restricted workspace' : 'Your GulfBridge account'}</span><h2>{adminMode ? 'Admin sign in' : mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">{adminMode ? 'Sign in with an existing account that has the GulfBridge admin role.' : 'One account can include both job seeker and recruiter roles.'}</p>
+      {!adminMode && <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>}
       <form className="stack-form" onSubmit={onSubmit}>
-        <input type="hidden" name="mode" value={mode} />
-        {mode === 'signup' && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
+        <input type="hidden" name="mode" value={adminMode ? 'signin' : mode} />
+        {!adminMode && mode === 'signup' && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
         <label className="form-label">Email address<input name="email" type="email" autoComplete="email" required /></label>
-        <label className="form-label">Password<input name="password" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
+        <label className="form-label">Password<input name="password" type="password" autoComplete={adminMode || mode === 'signin' ? 'current-password' : 'new-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
         {(error || notice) && <p className={error ? 'form-error' : 'form-success'} role="status">{error || notice}</p>}
-        <button className="button button-gold button-full" type="submit">{mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
+        <button className="button button-gold button-full" type="submit">{adminMode ? 'Sign in to admin workspace' : mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
       </form>
       <div className="privacy-callout"><ShieldCheck size={17} /><span>Your CV and identity documents are not collected during registration.</span></div>
       {!isSupabaseConfigured && <p className="setup-warning">{configMessage} Sign-in here is demo-only.</p>}
