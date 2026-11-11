@@ -1229,16 +1229,22 @@ function App() {
     const mode = String(values.mode || 'signin')
     const fullName = String(values.fullName || '').trim()
     const phone = String(values.phone || '').trim()
+    const adminBootstrapSecret = String(values.adminBootstrapSecret || '')
+    const isAdminRegistration = adminLoginMode && mode === 'admin-signup'
     if (!email || !password) {
       setAuthError('Enter your email and password.')
       return
     }
-    if (adminLoginMode && mode !== 'signin') {
-      setAuthError('Admin access requires signing in to an existing authorized account.')
+    if (adminLoginMode && mode !== 'signin' && !isAdminRegistration) {
+      setAuthError('Admin access requires the restricted first-time setup or an existing authorized account.')
       return
     }
-    if (mode === 'signup' && (!fullName || !phone)) {
+    if ((mode === 'signup' || isAdminRegistration) && (!fullName || !phone)) {
       setAuthError('Name and phone number are required during registration.')
+      return
+    }
+    if (isAdminRegistration && !adminBootstrapSecret) {
+      setAuthError('Enter the one-time setup key configured for the Supabase bootstrap function.')
       return
     }
     if (!supabase) {
@@ -1262,7 +1268,7 @@ function App() {
       setNotice('Demo session started. Connect Supabase to enable secure, persistent accounts.')
       return
     }
-    const result = mode === 'signup'
+    const result = mode === 'signup' || isAdminRegistration
       ? await supabase.auth.signUp({
           email,
           password,
@@ -1281,18 +1287,49 @@ function App() {
         setAuthError('Sign-in succeeded, but the account could not be verified.')
         return
       }
+      if (isAdminRegistration && !result.data.session) {
+        setAuthNotice('Registration received. Confirm the email sent to the authorized admin address, then sign in using the same one-time setup key to finish setup.')
+        return
+      }
       setAccountFromUser(result.data.user)
-      const { data: roleRows, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
+      let { data: roleRows, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
       if (roleError) {
         setAuthError(`Could not verify admin access: ${roleError.message}`)
         return
       }
-      const roles = (roleRows || [])
+      let roles = (roleRows || [])
         .map((row) => row.role)
         .filter((role): role is Account['roles'][number] => ['seeker', 'recruiter', 'admin'].includes(role))
       if (!roles.includes('admin')) {
-        setAuthError('This account does not have admin access. Ask an authorized project administrator to grant the admin role.')
-        return
+        if (!adminBootstrapSecret) {
+          setAuthError('This account is not an admin. For first-time setup, choose “One-time admin setup” or enter the configured setup key.')
+          return
+        }
+        const { error: bootstrapError } = await supabase.functions.invoke('bootstrap-admin', {
+          body: { setupSecret: adminBootstrapSecret },
+        })
+        if (bootstrapError) {
+          let detail = bootstrapError.message
+          if (bootstrapError.context instanceof Response) {
+            const responseBody = await bootstrapError.context.clone().json() as { error?: unknown }
+            if (typeof responseBody.error === 'string') detail = responseBody.error
+          }
+          setAuthError(`First-time admin setup failed: ${detail}`)
+          return
+        }
+        const refreshedRoles = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
+        if (refreshedRoles.error) {
+          setAuthError(`Admin setup completed, but the role could not be verified: ${refreshedRoles.error.message}`)
+          return
+        }
+        roleRows = refreshedRoles.data
+        roles = (roleRows || [])
+          .map((row) => row.role)
+          .filter((role): role is Account['roles'][number] => ['seeker', 'recruiter', 'admin'].includes(role))
+        if (!roles.includes('admin')) {
+          setAuthError('The setup service did not grant admin access. Contact GulfBridge support.')
+          return
+        }
       }
       setAccount((current) => current && current.id === result.data.user?.id
         ? { ...current, role: 'admin', roles: Array.from(new Set<Account['roles'][number]>(['seeker', ...roles])) }
@@ -2237,17 +2274,21 @@ function ApplyModal({ job, onClose, onSubmit, isSubmitting }: { job: Job; onClos
 
 function AuthModal({ onClose, onSubmit, error, notice, configurationMessage: configMessage, adminMode = false }: { onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; error: string; notice: string; configurationMessage: string; adminMode?: boolean }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const isAdminSetup = adminMode && mode === 'signup'
   return (
     <Modal onClose={onClose} className="form-modal auth-modal">
-      <span className="eyebrow">{adminMode ? 'Restricted workspace' : 'Your GulfBridge account'}</span><h2>{adminMode ? 'Admin sign in' : mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">{adminMode ? 'Sign in with an existing account that has the GulfBridge admin role.' : 'One account can include both job seeker and recruiter roles.'}</p>
-      {!adminMode && <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>}
+      <span className="eyebrow">{adminMode ? 'Restricted workspace' : 'Your GulfBridge account'}</span><h2>{adminMode ? isAdminSetup ? 'First-time admin setup' : 'Admin sign in' : mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">{adminMode ? isAdminSetup ? 'Register the authorized GulfBridge account. Email confirmation and a private one-time setup key are required.' : 'Sign in with your authorized account. If this is the first admin, provide the one-time setup key.' : 'One account can include both job seeker and recruiter roles.'}</p>
+      {adminMode
+        ? <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>One-time admin setup</button></div>
+        : <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>}
       <form className="stack-form" onSubmit={onSubmit}>
-        <input type="hidden" name="mode" value={adminMode ? 'signin' : mode} />
-        {!adminMode && mode === 'signup' && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
+        <input type="hidden" name="mode" value={adminMode ? isAdminSetup ? 'admin-signup' : 'signin' : mode} />
+        {(!adminMode && mode === 'signup' || isAdminSetup) && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
         <label className="form-label">Email address<input name="email" type="email" autoComplete="email" required /></label>
-        <label className="form-label">Password<input name="password" type="password" autoComplete={adminMode || mode === 'signin' ? 'current-password' : 'new-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
+        <label className="form-label">Password<input name="password" type="password" autoComplete={isAdminSetup || (!adminMode && mode === 'signup') ? 'new-password' : 'current-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
+        {adminMode && <label className="form-label">One-time setup key{!isAdminSetup && <small>Only needed when activating the first admin account.</small>}<input name="adminBootstrapSecret" type="password" autoComplete="off" minLength={16} maxLength={256} required={isAdminSetup} /></label>}
         {(error || notice) && <p className={error ? 'form-error' : 'form-success'} role="status">{error || notice}</p>}
-        <button className="button button-gold button-full" type="submit">{adminMode ? 'Sign in to admin workspace' : mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
+        <button className="button button-gold button-full" type="submit">{adminMode ? isAdminSetup ? 'Register first admin' : 'Sign in to admin workspace' : mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
       </form>
       <div className="privacy-callout"><ShieldCheck size={17} /><span>Your CV and identity documents are not collected during registration.</span></div>
       {!isSupabaseConfigured && <p className="setup-warning">{configMessage} Sign-in here is demo-only.</p>}
