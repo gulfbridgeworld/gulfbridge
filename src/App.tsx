@@ -18,6 +18,10 @@ import {
   Heart,
   Languages,
   LockKeyhole,
+  LayoutDashboard,
+  BarChart3,
+  ClipboardList,
+  LogOut,
   Menu as MenuIcon,
   Mail,
   MapPin,
@@ -398,6 +402,41 @@ function getInitials(value: string) {
     .join('')
 }
 
+function getLocalDayKey(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function sessionDayStorageKey(userId: string) {
+  return `gulfbridge-session-day:${userId}`
+}
+
+async function getFunctionErrorMessage(error: { message: string; name?: string; context?: unknown }) {
+  if (error.context instanceof Response) {
+    try {
+      const body = await error.context.clone().text()
+      if (body) {
+        try {
+          const parsed = JSON.parse(body) as { error?: unknown; message?: unknown }
+          if (typeof parsed.error === 'string') return parsed.error
+          if (typeof parsed.message === 'string') return parsed.message
+        } catch {
+          return body
+        }
+      }
+    } catch {
+      // Use the function client's message when its response body is unavailable.
+    }
+  }
+
+  if (error.name === 'FunctionsFetchError' || error.message.toLowerCase().includes('failed to send a request')) {
+    return 'The admin-users Edge Function could not be reached. Deploy the function and set its ALLOWED_ORIGINS secret to this exact website origin (https://gulfbridge.onrender.com), with no trailing slash, then check the Supabase function logs.'
+  }
+  return error.message
+}
+
 function App() {
   const [language, setLanguage] = useState<Language>('en')
   const [theme, setTheme] = useState<Theme>('dark')
@@ -430,6 +469,9 @@ function App() {
   const [jobNotifications, setJobNotifications] = useState<JobNotification[]>([])
   const [adminJobs, setAdminJobs] = useState<AdminJob[]>([])
   const [adminProfiles, setAdminProfiles] = useState<AdminProfile[]>([])
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false)
+  const [adminUsersError, setAdminUsersError] = useState('')
+  const [adminSearch, setAdminSearch] = useState('')
   const [adminCategories, setAdminCategories] = useState<AdminCategory[]>([])
   const [adminNews, setAdminNews] = useState<AdminNews[]>([])
   const [adminScamReports, setAdminScamReports] = useState<AdminScamReport[]>([])
@@ -477,6 +519,10 @@ function App() {
         return
       }
       setPage(nextPage)
+      if (nextPage === 'admin') {
+        setAdminUsersLoading(true)
+        setAdminUsersError('')
+      }
       setActiveJob(null)
       setApplyJob(null)
       setAuthOpen(false)
@@ -515,11 +561,76 @@ function App() {
       if (data.session?.user) setAccountFromUser(data.session.user)
     })
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) setAccountFromUser(session.user)
+      if (session?.user) {
+        setAccountFromUser(session.user)
+      }
       else setAccount(null)
     })
     return () => data.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!account) return
+    const userId = account.id
+    const storageKey = sessionDayStorageKey(userId)
+    let loginDay: string
+    try {
+      loginDay = window.localStorage.getItem(storageKey) || getLocalDayKey()
+      window.localStorage.setItem(storageKey, loginDay)
+    } catch (error) {
+      console.error('Could not read the sign-in date:', error)
+      loginDay = getLocalDayKey()
+    }
+
+    let expired = false
+    const expireSessionAfterMidnight = () => {
+      if (expired || getLocalDayKey() === loginDay) return
+      expired = true
+      try {
+        window.localStorage.removeItem(storageKey)
+      } catch (error) {
+        console.error('Could not clear the expired sign-in date:', error)
+      }
+      if (supabase && !userId.startsWith('demo-')) {
+        void supabase.auth.signOut({ scope: 'local' }).then(({ error }) => {
+          if (error) setNotice(`Your session expired at midnight, but the sign-out could not be confirmed: ${error.message}`)
+        })
+      }
+      setAccount(null)
+      setSavedIds([])
+      setApplications([])
+      setEmployerApplications([])
+      setMySubmissions([])
+      setPremiumRequests([])
+      setAdminReviews([])
+      setAdminPayments([])
+      setAdminPremiumRequests([])
+      setAdminApplications([])
+      setAdminJobs([])
+      setAdminProfiles([])
+      setPage('home')
+      window.history.replaceState({ gulfbridgePage: 'home' }, '')
+      setAuthError('')
+      setAuthNotice('Your session ended at midnight. Sign in again to continue.')
+      setAdminLoginMode(account.roles.includes('admin'))
+      setAuthOpen(true)
+      setNotice('Your session ended at midnight. Please sign in again.')
+    }
+    expireSessionAfterMidnight()
+    const nextMidnight = new Date()
+    nextMidnight.setHours(24, 0, 0, 0)
+    const timeout = window.setTimeout(expireSessionAfterMidnight, nextMidnight.getTime() - Date.now() + 50)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') expireSessionAfterMidnight()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('focus', expireSessionAfterMidnight)
+    return () => {
+      window.clearTimeout(timeout)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', expireSessionAfterMidnight)
+    }
+  }, [account])
 
   useEffect(() => {
     if (!supabase || !account || account.id.startsWith('demo-')) return
@@ -685,12 +796,20 @@ function App() {
       client.from('job_categories').select('name,is_active').order('name'),
       client.from('overseas_news').select('id,title,summary,country,source_url,is_published,published_at,created_at').order('created_at', { ascending: false }).limit(50),
       client.from('scam_reports').select('id,job_id,employer_name,details,status,created_at').order('created_at', { ascending: false }).limit(100),
-    ]).then(([jobsResult, usersResult, categoriesResult, newsResult, reportsResult]) => {
+    ]).then(async ([jobsResult, usersResult, categoriesResult, newsResult, reportsResult]) => {
       if (!active) return
       if (jobsResult.error) setNotice(`Could not load job management: ${jobsResult.error.message}`)
       else setAdminJobs((jobsResult.data || []) as AdminJob[])
-      if (usersResult.error) setNotice(`Could not load registered users: ${usersResult.error.message}`)
-      else setAdminProfiles(((usersResult.data as { users: AdminProfile[] } | null)?.users || []))
+      if (usersResult.error) {
+        const message = await getFunctionErrorMessage(usersResult.error)
+        if (!active) return
+        setAdminUsersError(message)
+        setAdminProfiles([])
+        setNotice(`Could not load registered users: ${message}`)
+      } else {
+        setAdminProfiles(((usersResult.data as { users: AdminProfile[] } | null)?.users || []))
+      }
+      setAdminUsersLoading(false)
       if (categoriesResult.error) setNotice(`Could not load job categories: ${categoriesResult.error.message}`)
       else setAdminCategories((categoriesResult.data || []) as AdminCategory[])
       if (newsResult.error) setNotice(`Could not load overseas news: ${newsResult.error.message}`)
@@ -698,7 +817,10 @@ function App() {
       if (reportsResult.error) setNotice(`Could not load scam reports: ${reportsResult.error.message}`)
       else setAdminScamReports((reportsResult.data || []) as AdminScamReport[])
     })
-    return () => { active = false }
+    return () => {
+      active = false
+      setAdminUsersLoading(false)
+    }
   }, [page, account?.id, account?.roles])
 
   useEffect(() => {
@@ -865,6 +987,10 @@ function App() {
         gulfbridgePage: nextPage,
         previousGulfbridgePage: page,
       }, '')
+    }
+    if (nextPage === 'admin') {
+      setAdminUsersLoading(true)
+      setAdminUsersError('')
     }
     setPage(nextPage)
     setActiveJob(null)
@@ -1204,6 +1330,13 @@ function App() {
         return
       }
     }
+    if (account) {
+      try {
+        window.localStorage.removeItem(sessionDayStorageKey(account.id))
+      } catch (error) {
+        console.error('Could not clear the sign-in date:', error)
+      }
+    }
     setAccount(null)
     setSavedIds([])
     setApplications([])
@@ -1229,22 +1362,16 @@ function App() {
     const mode = String(values.mode || 'signin')
     const fullName = String(values.fullName || '').trim()
     const phone = String(values.phone || '').trim()
-    const adminBootstrapSecret = String(values.adminBootstrapSecret || '')
-    const isAdminRegistration = adminLoginMode && mode === 'admin-signup'
     if (!email || !password) {
       setAuthError('Enter your email and password.')
       return
     }
-    if (adminLoginMode && mode !== 'signin' && !isAdminRegistration) {
-      setAuthError('Admin access requires the restricted first-time setup or an existing authorized account.')
+    if (adminLoginMode && mode !== 'signin') {
+      setAuthError('Admin access is sign-in only. New admin accounts must be provisioned outside the website.')
       return
     }
-    if ((mode === 'signup' || isAdminRegistration) && (!fullName || !phone)) {
+    if (mode === 'signup' && (!fullName || !phone)) {
       setAuthError('Name and phone number are required during registration.')
-      return
-    }
-    if (isAdminRegistration && !adminBootstrapSecret) {
-      setAuthError('Enter the one-time setup key configured for the Supabase bootstrap function.')
       return
     }
     if (!supabase) {
@@ -1268,7 +1395,7 @@ function App() {
       setNotice('Demo session started. Connect Supabase to enable secure, persistent accounts.')
       return
     }
-    const result = mode === 'signup' || isAdminRegistration
+    const result = mode === 'signup' && !adminLoginMode
       ? await supabase.auth.signUp({
           email,
           password,
@@ -1287,60 +1414,45 @@ function App() {
         setAuthError('Sign-in succeeded, but the account could not be verified.')
         return
       }
-      if (isAdminRegistration && !result.data.session) {
-        setAuthNotice('Registration received. Confirm the email sent to the authorized admin address, then sign in using the same one-time setup key to finish setup.')
-        return
-      }
-      setAccountFromUser(result.data.user)
-      let { data: roleRows, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
+      const { data: roleRows, error: roleError } = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
       if (roleError) {
+        await supabase.auth.signOut({ scope: 'local' })
         setAuthError(`Could not verify admin access: ${roleError.message}`)
         return
       }
-      let roles = (roleRows || [])
+      const roles = (roleRows || [])
         .map((row) => row.role)
         .filter((role): role is Account['roles'][number] => ['seeker', 'recruiter', 'admin'].includes(role))
       if (!roles.includes('admin')) {
-        if (!adminBootstrapSecret) {
-          setAuthError('This account is not an admin. For first-time setup, choose “One-time admin setup” or enter the configured setup key.')
-          return
-        }
-        const { error: bootstrapError } = await supabase.functions.invoke('bootstrap-admin', {
-          body: { setupSecret: adminBootstrapSecret },
-        })
-        if (bootstrapError) {
-          let detail = bootstrapError.message
-          if (bootstrapError.context instanceof Response) {
-            const responseBody = await bootstrapError.context.clone().json() as { error?: unknown }
-            if (typeof responseBody.error === 'string') detail = responseBody.error
-          }
-          setAuthError(`First-time admin setup failed: ${detail}`)
-          return
-        }
-        const refreshedRoles = await supabase.from('user_roles').select('role').eq('user_id', result.data.user.id)
-        if (refreshedRoles.error) {
-          setAuthError(`Admin setup completed, but the role could not be verified: ${refreshedRoles.error.message}`)
-          return
-        }
-        roleRows = refreshedRoles.data
-        roles = (roleRows || [])
-          .map((row) => row.role)
-          .filter((role): role is Account['roles'][number] => ['seeker', 'recruiter', 'admin'].includes(role))
-        if (!roles.includes('admin')) {
-          setAuthError('The setup service did not grant admin access. Contact GulfBridge support.')
-          return
-        }
+        await supabase.auth.signOut({ scope: 'local' })
+        setAuthError('This account does not have admin access. Sign in with the existing authorized admin account.')
+        return
       }
+      try {
+        window.localStorage.setItem(sessionDayStorageKey(result.data.user.id), getLocalDayKey())
+      } catch (error) {
+        console.error('Could not save the sign-in date:', error)
+      }
+      setAccountFromUser(result.data.user)
       setAccount((current) => current && current.id === result.data.user?.id
         ? { ...current, role: 'admin', roles: Array.from(new Set<Account['roles'][number]>(['seeker', ...roles])) }
         : current)
       setAuthOpen(false)
       setAdminLoginMode(false)
       window.history.pushState({ gulfbridgePage: 'admin', previousGulfbridgePage: page }, '')
+      setAdminUsersLoading(true)
+      setAdminUsersError('')
       setPage('admin')
       window.scrollTo({ top: 0, behavior: 'smooth' })
       setNotice('Admin access verified.')
       return
+    }
+    if (result.data.user) {
+      try {
+        window.localStorage.setItem(sessionDayStorageKey(result.data.user.id), getLocalDayKey())
+      } catch (error) {
+        console.error('Could not save the sign-in date:', error)
+      }
     }
     if (mode === 'signup' && !result.data.session) {
       setAuthNotice('Check your email to confirm your account, then sign in. Your phone is required during registration.')
@@ -1997,29 +2109,110 @@ function App() {
     }
 
     if (page === 'admin') {
+      const statusRows = [
+        { label: 'Live', value: adminJobs.length, color: '#41a876' },
+        { label: 'In review', value: adminReviews.length, color: '#e4ae35' },
+        { label: 'Awaiting payment', value: adminPayments.length + adminPremiumRequests.length, color: '#df7057' },
+      ]
+      const statusTotal = statusRows.reduce((total, item) => total + item.value, 0)
+      let statusOffset = 0
+      const statusGradient = statusTotal
+        ? `conic-gradient(${statusRows.map((item) => {
+            const start = statusOffset
+            statusOffset += item.value / statusTotal * 100
+            return `${item.color} ${start.toFixed(2)}% ${statusOffset.toFixed(2)}%`
+          }).join(', ')})`
+        : 'conic-gradient(#e9edf3 0% 100%)'
+      const categoryCounts = Object.entries(adminJobs.reduce<Record<string, number>>((counts, job) => {
+        const category = job.category || 'Other'
+        counts[category] = (counts[category] || 0) + 1
+        return counts
+      }, {})).sort((left, right) => right[1] - left[1]).slice(0, 5)
+      const maxCategoryCount = Math.max(...categoryCounts.map(([, count]) => count), 1)
+      const matchingJobs = adminJobs.filter((job) => {
+        const search = adminSearch.trim().toLocaleLowerCase()
+        return !search || `${job.job_title} ${job.agency_name} ${job.city} ${job.country}`.toLocaleLowerCase().includes(search)
+      }).slice(0, 7)
+      const applicationsByJob = new Map<string, number>()
+      for (const application of adminApplications) {
+        applicationsByJob.set(application.job_id, (applicationsByJob.get(application.job_id) || 0) + 1)
+      }
+      const adminNav = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return (
-        <main className="page-shell">
-          <PageHeading eyebrow="Admin console" title="Review before public" description="Approval, verification, payment confirmation, and publication stay under admin control." onBack={goBack} backLabel={t('back')} />
-          <div className="admin-stats"><StatCard value={String(adminJobs.length)} label="Published jobs managed" icon={<BriefcaseBusiness />} /><StatCard value={String(adminProfiles.length)} label="Recent registered users" icon={<UserRound />} /><StatCard value={String(adminApplications.length)} label="Applications to review" icon={<FileCheck2 />} /><StatCard value={String(adminScamReports.filter((report) => report.status === 'open' || report.status === 'investigating').length)} label="Open scam reports" icon={<ShieldCheck />} /></div>
-          <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Review queue</span><h2>Agency and job submissions</h2></div><span className="status-pill status-pending">Admin approval required</span></div>{adminReviews.length ? adminReviews.map((submission) => <AdminReviewCard key={submission.id} submission={submission} onDocument={downloadAgencyDocument} onReview={reviewSubmission} />) : <EmptyState title="Review queue is clear" description={isSupabaseConfigured ? 'New submissions will appear here after employers submit their official details and job offer.' : 'Connect Supabase and sign in with an admin role to review real submissions.'} action="Back to jobs" onAction={() => navigate('jobs')} />}</section>
-          <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Payment confirmation</span><h2>Listing payment references</h2></div></div>{adminPayments.length ? adminPayments.map((payment) => <AdminPaymentCard key={payment.id} payment={payment} onConfirm={confirmListingPayment} />) : <p className="queue-empty-note">No standard listing payments await confirmation.</p>}</section>
-          <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Premium companies</span><h2>Premium plan payment references</h2></div></div>{adminPremiumRequests.length ? adminPremiumRequests.map((request) => <AdminPremiumCard key={request.id} request={request} onConfirm={confirmPremiumSubscription} />) : <p className="queue-empty-note">No premium plan payments await confirmation.</p>}</section>
-          <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Application oversight</span><h2>Admin can review or correct progress</h2></div></div>{adminApplications.length ? adminApplications.map((application) => <AdminApplicationCard key={application.application_id} application={application} onUpdate={updateApplicationStatus} />) : <p className="queue-empty-note">No applications are available for admin oversight.</p>}</section>
-          <section className="panel admin-queue">
-            <div className="panel-heading"><div><span className="eyebrow">Live job listings</span><h2>Manage published opportunities</h2></div><div className="panel-heading-actions"><span className="status-pill">{adminJobs.length} shown</span><button className="button button-gold" type="button" onClick={() => void handleRoleSwitch('recruiter')}>Post a job</button></div></div>
-            {adminJobs.length ? adminJobs.map((job) => <AdminJobCard key={job.id} job={job} onSave={updateAdminJob} onArchive={archiveAdminJob} />) : <p className="queue-empty-note">No published jobs are available to manage.</p>}
-          </section>
-          <section className="panel admin-queue">
-            <div className="panel-heading"><div><span className="eyebrow">Registered accounts</span><h2>Recent users and access roles</h2></div><span className="status-pill">{adminProfiles.length} shown</span></div>
-            {adminProfiles.length ? <div className="admin-user-list">{adminProfiles.map((profile) => <article className="admin-user-row" key={profile.id}><span className="company-avatar">{getInitials(profile.full_name || 'GB')}</span><span><strong>{profile.full_name || 'GulfBridge member'}</strong><small>{profile.email} · {profile.phone || 'No phone'} · {profile.location || 'Location not set'}</small></span><span className="user-role-list">{profile.roles.join(', ') || 'seeker'}</span>{profile.roles.includes('admin') ? <span className="status-pill">Admin protected</span> : <button className="button button-outline" type="button" onClick={() => void setAdminUserDisabled(profile)}>{profile.disabled ? 'Restore access' : 'Suspend access'}</button>}</article>)}</div> : <p className="queue-empty-note">No registered users were found.</p>}
-            <p className="fine-print">Admin accounts are protected from suspension here. Roles and passwords are never set from this dashboard.</p>
-          </section>
-          <section className="panel admin-queue">
+        <main className="admin-shell">
+          <aside className="admin-sidebar">
+            <button className="admin-brand" type="button" onClick={() => navigate('home')}><span className="admin-brand-mark">GB</span><span><strong>GulfBridge</strong><small>ADMIN CONSOLE</small></span></button>
+            <p className="admin-nav-label">Workspace</p>
+            <nav className="admin-nav" aria-label="Admin workspace">
+              <button className="selected" type="button" onClick={() => adminNav('admin-dashboard')}><LayoutDashboard size={17} /> Dashboard</button>
+              <button type="button" onClick={() => adminNav('admin-jobs')}><BriefcaseBusiness size={17} /> Job Management</button>
+              <button type="button" onClick={() => adminNav('admin-applications')}><FileCheck2 size={17} /> Applications</button>
+              <button type="button" onClick={() => adminNav('admin-users')}><UserRound size={17} /> User Management</button>
+            </nav>
+            <p className="admin-nav-label">Platform</p>
+            <nav className="admin-nav" aria-label="Platform management">
+              <button type="button" onClick={() => adminNav('admin-categories')}><BriefcaseBusiness size={17} /> Categories</button>
+              <button type="button" onClick={() => adminNav('admin-news')}><Globe2 size={17} /> Overseas News</button>
+              <button type="button" onClick={() => adminNav('admin-reports')}><ShieldCheck size={17} /> Safety Reports</button>
+            </nav>
+            <div className="admin-sidebar-account"><span className="admin-account-avatar">{getInitials(account?.name || 'Admin')}</span><span><strong>{account?.name || 'Admin'}</strong><small>Administrator</small></span><button type="button" onClick={() => void handleSignOut()} aria-label="Sign out"><LogOut size={16} /></button></div>
+          </aside>
+          <div className="admin-main">
+            <header className="admin-topbar">
+              <div><p className="admin-breadcrumb">Dashboard <span>/</span> Job Management</p><h1>Job Management</h1></div>
+              <div className="admin-topbar-actions">
+                <label className="admin-search"><Search size={16} /><input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search jobs..." /></label>
+                <div className="admin-topbar-user"><span>{getInitials(account?.name || 'Admin')}</span><div><strong>{account?.name || 'Admin'}</strong><small>Administrator</small></div></div>
+                <button className="admin-topbar-logout" type="button" onClick={() => void handleSignOut()} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button>
+              </div>
+            </header>
+            <div className="admin-content">
+              <section className="admin-overview" id="admin-dashboard">
+                <div className="admin-overview-heading"><div><span className="admin-eyebrow">OVERVIEW</span><h2>Good to see you, {account?.name.split(' ')[0] || 'Admin'}</h2><p>Here’s what’s happening across your job platform.</p></div><span className="admin-live-indicator"><i /> Live data</span></div>
+                <div className="admin-stats">
+                  <article className="admin-stat-card"><span className="admin-stat-icon blue"><BriefcaseBusiness size={18} /></span><span className="admin-stat-copy"><small>Active jobs</small><strong>{adminJobs.length.toLocaleString()}</strong><em>Published and visible</em></span></article>
+                  <article className="admin-stat-card"><span className="admin-stat-icon green"><ClipboardList size={18} /></span><span className="admin-stat-copy"><small>In review</small><strong>{adminReviews.length.toLocaleString()}</strong><em>Awaiting approval</em></span></article>
+                  <article className="admin-stat-card"><span className="admin-stat-icon orange"><WalletCards size={18} /></span><span className="admin-stat-copy"><small>Pending payments</small><strong>{(adminPayments.length + adminPremiumRequests.length).toLocaleString()}</strong><em>Need confirmation</em></span></article>
+                  <article className="admin-stat-card"><span className="admin-stat-icon purple"><UserRound size={18} /></span><span className="admin-stat-copy"><small>Registered users</small><strong>{adminUsersLoading ? '…' : adminProfiles.length.toLocaleString()}</strong><em>Platform accounts</em></span></article>
+                </div>
+                <div className="admin-charts" id="admin-analytics">
+                  <section className="admin-chart-card">
+                    <div className="admin-chart-heading"><div><h3>Job Status Distribution</h3><p>Current listing pipeline</p></div><BarChart3 size={18} /></div>
+                    <div className="admin-donut-layout">
+                      <div className="admin-donut" style={{ background: statusGradient }} role="img" aria-label={`Job status distribution: ${statusRows.map((item) => `${item.label} ${item.value}`).join(', ')}`}><span><strong>{statusTotal.toLocaleString()}</strong><small>Listings</small></span></div>
+                      <ul className="admin-chart-legend">{statusRows.map((item) => <li key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.value.toLocaleString()}</strong></li>)}</ul>
+                    </div>
+                  </section>
+                  <section className="admin-chart-card">
+                    <div className="admin-chart-heading"><div><h3>Jobs by Industry</h3><p>Active listings by category</p></div><BarChart3 size={18} /></div>
+                    {categoryCounts.length ? <div className="admin-bar-chart" role="img" aria-label={`Top job categories: ${categoryCounts.map(([name, count]) => `${name} ${count}`).join(', ')}`}>{categoryCounts.map(([name, count]) => <div className="admin-bar-column" key={name}><span className="admin-bar-value">{count}</span><div className="admin-bar-track"><i style={{ height: `${Math.max(12, count / maxCategoryCount * 100)}%` }} /></div><small title={name}>{name}</small></div>)}</div> : <div className="admin-chart-empty">Category data will appear when jobs are published.</div>}
+                  </section>
+                </div>
+                <section className="admin-jobs-preview" aria-labelledby="admin-recent-jobs-heading">
+                  <div className="admin-table-heading"><div><span className="admin-eyebrow">LATEST ACTIVITY</span><h3 id="admin-recent-jobs-heading">Recent Jobs</h3></div><button type="button" onClick={() => adminNav('admin-jobs')}>View all <ArrowRight size={14} /></button></div>
+                  {matchingJobs.length ? <div className="admin-table-scroll"><table className="admin-jobs-table"><thead><tr><th>Job title</th><th>Company</th><th>Location</th><th>Salary</th><th>Status</th><th>Applications</th><th>Action</th></tr></thead><tbody>{matchingJobs.map((job) => <tr key={job.id}><td><strong>{job.job_title}</strong><small>{job.published_at ? job.published_at.slice(0, 10) : 'Recently published'}</small></td><td>{job.agency_name}</td><td>{job.city}, {job.country}</td><td>{formatMoney(Number(job.salary_min), job.salary_currency)} – {formatMoney(Number(job.salary_max), job.salary_currency)}</td><td><span className="admin-job-status">Live</span></td><td>{applicationsByJob.get(job.id) || 0}</td><td><button className="admin-manage-button" type="button" onClick={() => adminNav('admin-jobs')}>Manage</button></td></tr>)}</tbody></table></div> : <div className="admin-chart-empty">{adminSearch ? 'No jobs match your search.' : 'No published jobs are available yet.'}</div>}
+                </section>
+              </section>
+              <div className="admin-operations">
+                <section className="panel admin-queue" id="admin-review-queue"><div className="panel-heading"><div><span className="eyebrow">Review queue</span><h2>Agency and job submissions</h2></div><span className="status-pill status-pending">Admin approval required</span></div>{adminReviews.length ? adminReviews.map((submission) => <AdminReviewCard key={submission.id} submission={submission} onDocument={downloadAgencyDocument} onReview={reviewSubmission} />) : <EmptyState title="Review queue is clear" description={isSupabaseConfigured ? 'New submissions will appear here after employers submit their official details and job offer.' : 'Connect Supabase and sign in with an admin role to review real submissions.'} action="Back to jobs" onAction={() => navigate('jobs')} />}</section>
+                <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Payment confirmation</span><h2>Listing payment references</h2></div></div>{adminPayments.length ? adminPayments.map((payment) => <AdminPaymentCard key={payment.id} payment={payment} onConfirm={confirmListingPayment} />) : <p className="queue-empty-note">No standard listing payments await confirmation.</p>}</section>
+                <section className="panel admin-queue"><div className="panel-heading"><div><span className="eyebrow">Premium companies</span><h2>Premium plan payment references</h2></div></div>{adminPremiumRequests.length ? adminPremiumRequests.map((request) => <AdminPremiumCard key={request.id} request={request} onConfirm={confirmPremiumSubscription} />) : <p className="queue-empty-note">No premium plan payments await confirmation.</p>}</section>
+                <section className="panel admin-queue" id="admin-applications"><div className="panel-heading"><div><span className="eyebrow">Application oversight</span><h2>Admin can review or correct progress</h2></div></div>{adminApplications.length ? adminApplications.map((application) => <AdminApplicationCard key={application.application_id} application={application} onUpdate={updateApplicationStatus} />) : <p className="queue-empty-note">No applications are available for admin oversight.</p>}</section>
+                <section className="panel admin-queue" id="admin-jobs">
+                  <div className="panel-heading"><div><span className="eyebrow">Live job listings</span><h2>Manage published opportunities</h2></div><div className="panel-heading-actions"><span className="status-pill">{adminJobs.length} shown</span><button className="button button-gold" type="button" onClick={() => void handleRoleSwitch('recruiter')}>Post a job</button></div></div>
+                  {adminJobs.length ? adminJobs.map((job) => <AdminJobCard key={job.id} job={job} onSave={updateAdminJob} onArchive={archiveAdminJob} />) : <p className="queue-empty-note">No published jobs are available to manage.</p>}
+                </section>
+                <section className="panel admin-queue" id="admin-users">
+                  <div className="panel-heading"><div><span className="eyebrow">Registered accounts</span><h2>Recent users and access roles</h2></div><span className="status-pill">{adminUsersLoading ? 'Loading…' : `${adminProfiles.length} shown`}</span></div>
+                  {adminUsersError ? <div className="admin-inline-error" role="alert"><strong>Registered users could not be loaded</strong><p>{adminUsersError}</p><small>Check that the admin-users Edge Function is deployed and its ALLOWED_ORIGINS secret matches your website origin exactly.</small></div> : adminUsersLoading ? <p className="queue-empty-note">Loading registered accounts…</p> : adminProfiles.length ? <div className="admin-user-list">{adminProfiles.map((profile) => <article className="admin-user-row" key={profile.id}><span className="company-avatar">{getInitials(profile.full_name || 'GB')}</span><span><strong>{profile.full_name || 'GulfBridge member'}</strong><small>{profile.email} · {profile.phone || 'No phone'} · {profile.location || 'Location not set'}</small></span><span className="user-role-list">{profile.roles.join(', ') || 'seeker'}</span>{profile.roles.includes('admin') ? <span className="status-pill">Admin protected</span> : <button className="button button-outline" type="button" onClick={() => void setAdminUserDisabled(profile)}>{profile.disabled ? 'Restore access' : 'Suspend access'}</button>}</article>)}</div> : <p className="queue-empty-note">No registered users were found.</p>}
+                  <p className="fine-print">Admin accounts are protected from suspension here. Roles and passwords are never set from this dashboard.</p>
+                </section>
+                <section className="panel admin-queue" id="admin-categories">
             <div className="panel-heading"><div><span className="eyebrow">Job categories</span><h2>Manage categories</h2></div></div>
             <form className="admin-inline-form" onSubmit={createAdminCategory}><label className="form-label">New category<input name="name" maxLength={80} required placeholder="e.g. Agriculture" /></label><button className="button button-gold" type="submit">Add category</button></form>
             <div className="admin-category-list">{adminCategories.map((category) => <div className="admin-category-row" key={category.name}><span>{category.name}</span><button className="button button-outline" type="button" onClick={() => void toggleAdminCategory(category)}>{category.is_active ? 'Active' : 'Hidden'}</button></div>)}</div>
-          </section>
-          <section className="panel admin-queue">
+                </section>
+                <section className="panel admin-queue" id="admin-news">
             <div className="panel-heading"><div><span className="eyebrow">Overseas employment news</span><h2>Publish trusted career updates</h2></div></div>
             <form className="stack-form admin-news-form" onSubmit={createOverseasNews}>
               <label className="form-label">Headline<input name="title" minLength={5} maxLength={180} required /></label>
@@ -2029,11 +2222,14 @@ function App() {
               <button className="button button-gold" type="submit">Save news item</button>
             </form>
             {adminNews.map((news) => <article className="submission-card" key={news.id}><div className="submission-card-heading"><div><h3>{news.title}</h3><p>{news.country || 'All destinations'} · {news.is_published ? 'Published' : 'Draft'}</p></div></div><p>{news.summary}</p><div className="review-actions"><button className="button button-outline" type="button" onClick={() => void toggleNewsVisibility(news)}>{news.is_published ? 'Unpublish' : 'Publish'}</button><button className="button button-danger" type="button" onClick={() => void deleteOverseasNews(news.id)}>Delete</button></div></article>)}
-          </section>
-          <section className="panel admin-queue">
+                </section>
+                <section className="panel admin-queue" id="admin-reports">
             <div className="panel-heading"><div><span className="eyebrow">Community safety</span><h2>Reported scams</h2></div><span className="status-pill">{adminScamReports.length} reports</span></div>
             {adminScamReports.length ? adminScamReports.map((report) => <article className="submission-card" key={report.id}><div className="submission-card-heading"><div><h3>{report.employer_name || 'Reported listing or contact'}</h3><p>Submitted {new Date(report.created_at).toLocaleDateString()} · {report.job_id ? `Job ${report.job_id.slice(0, 8)}` : 'No job reference'}</p></div><span className="status-pill">{report.status}</span></div><p>{report.details}</p><label className="form-label">Review status<select value={report.status} onChange={(event) => void updateScamReport(report, event.target.value)}>{['open', 'investigating', 'resolved', 'dismissed'].map((status) => <option key={status}>{status}</option>)}</select></label></article>) : <p className="queue-empty-note">No scam reports have been submitted.</p>}
-          </section>
+                </section>
+              </div>
+            </div>
+          </div>
         </main>
       )
     }
@@ -2124,7 +2320,7 @@ function App() {
   }
 
   return (
-    <div className={`app-root ${isArabic ? 'is-rtl' : ''}`}>
+    <div className={`app-root ${isArabic ? 'is-rtl' : ''} ${page === 'admin' ? 'admin-app' : ''}`}>
       <header className="site-header">
         <a className="brand" href="#admin" onClick={(event) => { event.preventDefault(); openAdminAccess() }} aria-label="GulfBridge admin sign-in" title="Admin sign-in">
           <span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span>
@@ -2274,23 +2470,19 @@ function ApplyModal({ job, onClose, onSubmit, isSubmitting }: { job: Job; onClos
 
 function AuthModal({ onClose, onSubmit, error, notice, configurationMessage: configMessage, adminMode = false }: { onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; error: string; notice: string; configurationMessage: string; adminMode?: boolean }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
-  const isAdminSetup = adminMode && mode === 'signup'
   return (
     <Modal onClose={onClose} className="form-modal auth-modal">
-      <span className="eyebrow">{adminMode ? 'Restricted workspace' : 'Your GulfBridge account'}</span><h2>{adminMode ? isAdminSetup ? 'First-time admin setup' : 'Admin sign in' : mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">{adminMode ? isAdminSetup ? 'Register the authorized GulfBridge account. Email confirmation and a private one-time setup key are required.' : 'Sign in with your authorized account. If this is the first admin, provide the one-time setup key.' : 'One account can include both job seeker and recruiter roles.'}</p>
-      {adminMode
-        ? <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>One-time admin setup</button></div>
-        : <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>}
+      <span className="eyebrow">{adminMode ? 'Restricted workspace' : 'Your GulfBridge account'}</span><h2>{adminMode ? 'Admin sign in' : mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">{adminMode ? 'Sign in with the existing authorized admin account. Admin account registration is disabled on this website.' : 'One account can include both job seeker and recruiter roles.'}</p>
+      {!adminMode && <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>}
       <form className="stack-form" onSubmit={onSubmit}>
-        <input type="hidden" name="mode" value={adminMode ? isAdminSetup ? 'admin-signup' : 'signin' : mode} />
-        {(!adminMode && mode === 'signup' || isAdminSetup) && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
+        <input type="hidden" name="mode" value={adminMode ? 'signin' : mode} />
+        {!adminMode && mode === 'signup' && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
         <label className="form-label">Email address<input name="email" type="email" autoComplete="email" required /></label>
-        <label className="form-label">Password<input name="password" type="password" autoComplete={isAdminSetup || (!adminMode && mode === 'signup') ? 'new-password' : 'current-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
-        {adminMode && <label className="form-label">One-time setup key{!isAdminSetup && <small>Only needed when activating the first admin account.</small>}<input name="adminBootstrapSecret" type="password" autoComplete="off" minLength={16} maxLength={256} required={isAdminSetup} /></label>}
+        <label className="form-label">Password<input name="password" type="password" autoComplete={!adminMode && mode === 'signup' ? 'new-password' : 'current-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
         {(error || notice) && <p className={error ? 'form-error' : 'form-success'} role="status">{error || notice}</p>}
-        <button className="button button-gold button-full" type="submit">{adminMode ? isAdminSetup ? 'Register first admin' : 'Sign in to admin workspace' : mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
+        <button className="button button-gold button-full" type="submit">{adminMode ? 'Sign in to admin workspace' : mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
       </form>
-      <div className="privacy-callout"><ShieldCheck size={17} /><span>Your CV and identity documents are not collected during registration.</span></div>
+      <div className="privacy-callout"><ShieldCheck size={17} /><span>{adminMode ? 'Your CV and identity documents are never collected during admin sign-in.' : 'Your CV and identity documents are not collected during registration.'}</span></div>
       {!isSupabaseConfigured && <p className="setup-warning">{configMessage} Sign-in here is demo-only.</p>}
     </Modal>
   )
@@ -2486,10 +2678,6 @@ function ApplicationCard({ application }: { application: ApplicationRecord }) {
 
 function PriceCard({ title, price, note }: { title: string; price: string; note: string }) {
   return <div className="price-card"><span className="eyebrow">{title}</span><strong>{price}</strong><p>{note}</p></div>
-}
-
-function StatCard({ value, label, icon }: { value: string; label: string; icon: ReactNode }) {
-  return <div className="stat-card panel"><span className="stat-icon">{icon}</span><strong>{value}</strong><small>{label}</small></div>
 }
 
 function InfoRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
