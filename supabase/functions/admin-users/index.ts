@@ -74,9 +74,13 @@ Deno.serve(async (request) => {
 
     if (body.action !== 'list') return new Response('Unsupported admin action.', { status: 400, headers })
 
-    const { data: usersData, error: usersError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 100 })
-    if (usersError) throw usersError
-    const users = usersData.users
+    const users: Array<typeof userData.user> = []
+    for (let page = 1; ; page += 1) {
+      const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 100 })
+      if (error) throw error
+      users.push(...data.users)
+      if (data.users.length < 100) break
+    }
     const ids = users.map((user) => user.id)
     if (!ids.length) return Response.json({ users: [] }, { headers })
 
