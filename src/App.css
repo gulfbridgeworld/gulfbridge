@@ -303,7 +303,7 @@
 .salary-note svg { flex: 0 0 auto; color: var(--gold-dim); }
 
 .country-section { padding-top: 45px; }
-.country-feature-banner { min-height: 150px; padding: 25px 32px; display: flex; align-items: center; justify-content: space-between; overflow: hidden; position: relative; color: #fff; border: 1px solid rgba(37,99,235,.25); border-radius: 18px; background: linear-gradient(100deg,rgba(26,91,184,.97),rgba(40,123,214,.82) 62%,rgba(28,66,120,.35)), url('https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1400&q=80') center 45%/cover; box-shadow: 0 14px 36px rgba(23,75,145,.18); }
+.country-feature-banner { min-height: 150px; padding: 25px 32px; display: flex; align-items: center; justify-content: space-between; overflow: hidden; position: relative; color: #fff; border: 1px solid rgba(37,99,235,.25); border-radius: 18px; background: linear-gradient(100deg,rgba(26,91,184,.97),rgba(40,123,214,.82) 62%,rgba(28,66,120,.35)), url('/images/gulfbridge-flight.jpg') center 45%/cover; box-shadow: 0 14px 36px rgba(23,75,145,.18); }
 .country-feature-banner .eyebrow { color: rgba(255,255,255,.88); }
 .country-feature-banner .eyebrow svg { vertical-align: middle; }
 .country-feature-banner h2 { margin: 9px 0 4px; font: 800 27px/1.2 var(--font-display); }
@@ -1369,7 +1369,7 @@
 :root[data-theme='light'] .trust-card { border-color: var(--line); background: linear-gradient(145deg,#fff,#f3f8ff); }
 :root[data-theme='light'] .trust-icon,
 :root[data-theme='light'] .guide-icon { color: #2463d7; border-color: var(--line); background: rgba(37,99,235,.07); }
-:root[data-theme='light'] .country-feature-banner { border-color: rgba(37,99,235,.2); background: linear-gradient(100deg,rgba(36,107,215,.96),rgba(77,155,234,.76) 62%,rgba(28,92,146,.24)), url('https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1400&q=80') center 45%/cover; }
+:root[data-theme='light'] .country-feature-banner { border-color: rgba(37,99,235,.2); background: linear-gradient(100deg,rgba(36,107,215,.96),rgba(77,155,234,.76) 62%,rgba(28,92,146,.24)), url('/images/gulfbridge-flight.jpg') center 45%/cover; }
 :root[data-theme='light'] .country-feature-banner .eyebrow,
 :root[data-theme='light'] .country-feature-banner p { color: rgba(255,255,255,.94); }
 :root[data-theme='light'] .country-feature-plane { color: #fff; }

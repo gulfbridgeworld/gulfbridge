@@ -178,8 +178,8 @@ type InstallPromptEvent = Event & {
 }
 
 const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides', 'alerts', 'inbox']
-const flightPhoto = 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1400&q=80'
-const airportHeroPhoto = 'https://images.unsplash.com/photo-1569154941061-e231b4725ef1?auto=format&fit=crop&w=1600&q=82'
+const flightPhoto = '/images/gulfbridge-flight.jpg'
+const airportHeroPhoto = '/images/gulfbridge-hero.jpg'
 
 const countryHighlights = [
   { country: 'United Arab Emirates', city: 'Dubai', flag: '🇦🇪', code: 'UAE' },
