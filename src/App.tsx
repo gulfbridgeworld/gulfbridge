@@ -40,7 +40,6 @@ import {
 } from 'lucide-react'
 import MapExplorer from './MapExplorer'
 import { categoryNames, destinations, formatMoney, jobs as starterJobs } from './data'
-import heroPhoto from './assets/gulfbridge-hero.jpg'
 import type { Job } from './data'
 import { configurationMessage, isSupabaseConfigured, supabase } from './lib/supabase'
 import './App.css'
@@ -179,6 +178,8 @@ type InstallPromptEvent = Event & {
 }
 
 const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides', 'alerts', 'inbox']
+const flightPhoto = 'https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1400&q=80'
+const airportHeroPhoto = 'https://images.unsplash.com/photo-1569154941061-e231b4725ef1?auto=format&fit=crop&w=1600&q=82'
 
 const countryHighlights = [
   { country: 'United Arab Emirates', city: 'Dubai', flag: '🇦🇪', code: 'UAE' },
@@ -2647,8 +2648,7 @@ function App() {
       <>
         <main>
           <section className="hero-section">
-            <img className="hero-photo" src={heroPhoto} alt="A team collaborating around a table in a modern workspace" />
-            <div className="hero-grid-pattern" />
+            <img className="hero-photo" src={airportHeroPhoto} alt="Passenger airplane at an international airport" decoding="async" />
             <div className="hero-photo-note"><span className="hero-photo-note-icon"><Globe2 size={17} /></span><span><strong>Good work can take you further</strong><small>Explore opportunities across 12 destinations</small></span></div>
             <div className="hero-content">
               <span className="eyebrow hero-eyebrow"><span className="eyebrow-dot" /> {t('heroEyebrow')}</span>
@@ -2845,7 +2845,7 @@ function JobCard({ job, index, isSaved, isExample, onOpen, onSave, t, toKes }: J
 }
 
 function PageHeading({ eyebrow, title, description, action, onBack, backLabel }: { eyebrow: string; title: string; description: string; action?: ReactNode; onBack: () => void; backLabel: string }) {
-  return <div className="page-heading"><button className="button button-outline page-back-button" onClick={onBack} type="button"><ArrowLeft size={15} />{backLabel}</button><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>
+  return <div className="page-heading"><div className="page-heading-art" aria-hidden="true"><img src={flightPhoto} alt="" loading="lazy" /><span><Plane size={18} /></span></div><button className="button button-outline page-back-button" onClick={onBack} type="button"><ArrowLeft size={15} />{backLabel}</button><div className="page-heading-copy"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>
 }
 
 function FilterBar({ destinations: destinationOptions, categories, destination, category, verifiedOnly, onDestination, onCategory, onVerifiedOnly, onSearch, search }: {
