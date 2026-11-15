@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   ArrowDownToLine,
@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import MapExplorer from './MapExplorer'
 import { categoryNames, destinations, formatMoney, jobs as starterJobs } from './data'
+import heroPhoto from './assets/gulfbridge-hero.jpg'
 import type { Job } from './data'
 import { configurationMessage, isSupabaseConfigured, supabase } from './lib/supabase'
 import './App.css'
@@ -87,7 +88,8 @@ type AdminJob = {
 type AdminJobUpdate = Pick<AdminJob, 'job_title' | 'agency_name' | 'country' | 'city' | 'category' | 'employment_type' | 'description' | 'salary_min' | 'salary_max' | 'salary_currency'>
 type AdminProfile = { id: string; email: string; full_name: string; phone: string; location: string; created_at: string; disabled: boolean; roles: string[]; canManage?: boolean }
 type InboxConversation = { id: string; user_id: string; created_at: string; full_name: string; email: string }
-type InboxMessage = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string }
+type InboxMessage = { id: string; conversation_id: string; sender_id: string; body: string; read_at: string | null; created_at: string }
+type MessageAlert = { id: string; conversationId: string }
 type AdminCategory = { name: string; is_active: boolean }
 type AdminNews = { id: string; title: string; summary: string; country: string | null; source_url: string | null; is_published: boolean; published_at: string | null; created_at: string }
 type AdminScamReport = { id: string; job_id: string | null; employer_name: string; details: string; status: string; created_at: string }
@@ -483,6 +485,10 @@ function App() {
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([])
   const [inboxMessagesConversationId, setInboxMessagesConversationId] = useState('')
   const [inboxLoading, setInboxLoading] = useState(false)
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+  const [unreadMessagesByConversation, setUnreadMessagesByConversation] = useState<Record<string, number>>({})
+  const [messageAlert, setMessageAlert] = useState<MessageAlert | null>(null)
+  const seenInboxMessageIds = useRef(new Set<string>())
   const [adminCategories, setAdminCategories] = useState<AdminCategory[]>([])
   const [adminNews, setAdminNews] = useState<AdminNews[]>([])
   const [adminScamReports, setAdminScamReports] = useState<AdminScamReport[]>([])
@@ -575,8 +581,12 @@ function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setAccountFromUser(session.user)
+      } else {
+        setAccount(null)
+        setUnreadMessageCount(0)
+        setUnreadMessagesByConversation({})
+        setMessageAlert(null)
       }
-      else setAccount(null)
     })
     return () => data.subscription.unsubscribe()
   }, [])
@@ -609,6 +619,9 @@ function App() {
         })
       }
       setAccount(null)
+      setUnreadMessageCount(0)
+      setUnreadMessagesByConversation({})
+      setMessageAlert(null)
       setSavedIds([])
       setApplications([])
       setEmployerApplications([])
@@ -953,7 +966,7 @@ function App() {
     let active = true
     const loadMessages = async () => {
       const { data, error } = await client.from('inbox_messages')
-        .select('id,conversation_id,sender_id,body,created_at')
+        .select('id,conversation_id,sender_id,body,read_at,created_at')
         .eq('conversation_id', activeConversationId)
         .order('created_at', { ascending: true })
       if (!active) return
@@ -961,8 +974,28 @@ function App() {
         setNotice(`Could not load inbox messages: ${error.message}`)
         return
       }
+      const unreadIncoming = (data || []).filter((message) => message.sender_id !== account.id && !message.read_at)
       setInboxMessages((data || []) as InboxMessage[])
       setInboxMessagesConversationId(activeConversationId)
+      if (unreadIncoming.length && document.visibilityState === 'visible') {
+        const readAt = new Date().toISOString()
+        const { error: readError } = await client.from('inbox_messages')
+          .update({ read_at: readAt })
+          .eq('conversation_id', activeConversationId)
+          .neq('sender_id', account.id)
+          .is('read_at', null)
+        if (readError) {
+          setNotice(`Message could not be marked as read: ${readError.message}`)
+          return
+        }
+        setInboxMessages((current) => current.map((message) => unreadIncoming.some((unread) => unread.id === message.id) ? { ...message, read_at: readAt } : message))
+        setUnreadMessageCount((count) => Math.max(0, count - unreadIncoming.length))
+        setUnreadMessagesByConversation((current) => {
+          const next = { ...current }
+          delete next[activeConversationId]
+          return next
+        })
+      }
     }
     void loadMessages()
     const interval = window.setInterval(() => void loadMessages(), 5000)
@@ -971,6 +1004,110 @@ function App() {
       window.clearInterval(interval)
     }
   }, [page, account, activeConversationId])
+
+  useEffect(() => {
+    if (!supabase || !account || account.id.startsWith('demo-')) {
+      seenInboxMessageIds.current.clear()
+      return
+    }
+
+    const client = supabase
+    let active = true
+    let hasLoadedUnread = false
+    const loadUnreadMessages = async () => {
+      const { data, error, count } = await client.from('inbox_messages')
+        .select('id,conversation_id,sender_id,body,read_at,created_at', { count: 'exact' })
+        .neq('sender_id', account.id)
+        .is('read_at', null)
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (!active) return
+      if (error) {
+        if (!hasLoadedUnread) setNotice(`Message alerts are unavailable: ${error.message}. Check that the inbox migration is applied.`)
+        return
+      }
+
+      const visibleMessages = page === 'inbox' && document.visibilityState === 'visible'
+        ? (data || []).filter((message) => message.conversation_id === activeConversationId)
+        : []
+      const unreadMessages = (data || []).filter((message) => !visibleMessages.some((visible) => visible.id === message.id))
+      const conversationCounts: Record<string, number> = {}
+      for (const message of unreadMessages) {
+        conversationCounts[message.conversation_id] = (conversationCounts[message.conversation_id] || 0) + 1
+      }
+      const unseenMessages = unreadMessages.filter((message) => !seenInboxMessageIds.current.has(message.id))
+      for (const message of data || []) seenInboxMessageIds.current.add(message.id)
+      setUnreadMessageCount(Math.max(0, (count ?? data?.length ?? 0) - visibleMessages.length))
+      setUnreadMessagesByConversation(conversationCounts)
+      if (unseenMessages.length) {
+        const latest = unseenMessages[0]
+        setMessageAlert({ id: latest.id, conversationId: latest.conversation_id })
+        if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState === 'hidden') {
+          new Notification('New GulfBridge message', {
+            body: 'You have a new message. Open GulfBridge to read it.',
+            icon: '/icons/app-192.png',
+            tag: `gulfbridge-message-${latest.conversation_id}`,
+          })
+        }
+      }
+      hasLoadedUnread = true
+    }
+
+    const handleIncomingMessage = (message: InboxMessage) => {
+      if (message.sender_id === account.id || seenInboxMessageIds.current.has(message.id)) return
+      seenInboxMessageIds.current.add(message.id)
+      if (page === 'inbox' && document.visibilityState === 'visible' && activeConversationId === message.conversation_id) {
+        setInboxMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message])
+        setInboxMessagesConversationId(message.conversation_id)
+        const readAt = new Date().toISOString()
+        void client.from('inbox_messages').update({ read_at: readAt }).eq('id', message.id).is('read_at', null).then(({ error }) => {
+          if (error) setNotice(`Message could not be marked as read: ${error.message}`)
+          else void loadUnreadMessages()
+        })
+        return
+      }
+
+      setUnreadMessageCount((count) => count + 1)
+      setUnreadMessagesByConversation((current) => ({
+        ...current,
+        [message.conversation_id]: (current[message.conversation_id] || 0) + 1,
+      }))
+      setMessageAlert({ id: message.id, conversationId: message.conversation_id })
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('New GulfBridge message', {
+          body: 'You have a new message. Open GulfBridge to read it.',
+          icon: '/icons/app-192.png',
+          tag: `gulfbridge-message-${message.conversation_id}`,
+        })
+      }
+    }
+
+    void loadUnreadMessages()
+    const channel = client.channel(`inbox-notifications-${account.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'inbox_messages',
+      }, (payload) => handleIncomingMessage(payload.new as InboxMessage))
+      .subscribe((status) => {
+        if (!active) return
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setNotice('Live message alerts are temporarily unavailable. Unread messages will still be checked while GulfBridge is open.')
+        }
+      })
+    const poll = window.setInterval(() => void loadUnreadMessages(), 15000)
+    return () => {
+      active = false
+      window.clearInterval(poll)
+      void client.removeChannel(channel)
+    }
+  }, [account, page, activeConversationId])
+
+  useEffect(() => {
+    if (!messageAlert) return
+    const timeout = window.setTimeout(() => setMessageAlert(null), 12000)
+    return () => window.clearTimeout(timeout)
+  }, [messageAlert])
 
   useEffect(() => {
     if (!supabase || page !== 'profile' || !account || account.id.startsWith('demo-')) return
@@ -1488,6 +1625,9 @@ function App() {
       }
     }
     setAccount(null)
+    setUnreadMessageCount(0)
+    setUnreadMessagesByConversation({})
+    setMessageAlert(null)
     setSavedIds([])
     setApplications([])
     setEmployerApplications([])
@@ -1677,6 +1817,9 @@ function App() {
     if (!account) return
     if (!supabase || account.id.startsWith('demo-')) {
       setAccount(null)
+      setUnreadMessageCount(0)
+      setUnreadMessagesByConversation({})
+      setMessageAlert(null)
       setPage('home')
       window.history.replaceState({ gulfbridgePage: 'home' }, '')
       setDeleteConfirmOpen(false)
@@ -1692,6 +1835,9 @@ function App() {
     }
     setProfileDocuments([])
     setAccount(null)
+    setUnreadMessageCount(0)
+    setUnreadMessagesByConversation({})
+    setMessageAlert(null)
     setPage('home')
     window.history.replaceState({ gulfbridgePage: 'home' }, '')
     setDeleteConfirmOpen(false)
@@ -2286,7 +2432,7 @@ function App() {
                 </select>
               </label>
               {inboxConversations.map((conversation) => <button className={`inbox-contact ${activeConversationId === conversation.id ? 'active' : ''}`} key={conversation.id} type="button" onClick={() => { setActiveConversationId(conversation.id); setInboxTargetUserId(conversation.user_id) }}>
-                <span className="company-avatar">{getInitials(conversation.full_name || 'GB')}</span><span><strong>{conversation.full_name}</strong><small>{conversation.email || 'GulfBridge member'}</small></span>
+                <span className="company-avatar">{getInitials(conversation.full_name || 'GB')}</span><span><strong>{conversation.full_name}</strong><small>{conversation.email || 'GulfBridge member'}</small></span>{unreadMessagesByConversation[conversation.id] > 0 && <span className="inbox-unread-count">{unreadMessagesByConversation[conversation.id]}</span>}
               </button>)}
               {!inboxConversations.length && <p className="queue-empty-note">No conversations yet. Choose a registered user above to send the first message.</p>}
             </aside>}
@@ -2294,16 +2440,17 @@ function App() {
               <div className="inbox-thread-heading">
                 <span className="company-avatar"><MessageSquare size={18} /></span>
                 <div><strong>{isAdmin ? activeConversation?.full_name || targetUser?.full_name || 'Select a member' : 'GulfBridge support'}</strong><small>{isAdmin ? activeConversation?.email || targetUser?.email || 'Private member conversation' : 'Private conversation with the GulfBridge team'}</small></div>
+                <button className="inbox-alert-setting" type="button" onClick={() => void enableWebNotifications()}><BellRing size={14} />{typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'Desktop alerts on' : 'Enable desktop alerts'}</button>
               </div>
               <div className="inbox-message-list" aria-live="polite">
                 {inboxLoading ? <p className="queue-empty-note">Loading conversations…</p> : currentMessages.length ? currentMessages.map((message) => <article className={`inbox-message ${message.sender_id === account?.id ? 'mine' : ''}`} key={message.id}><p>{message.body}</p><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleString()}</time></article>) : <div className="inbox-empty"><MessageSquare size={25} /><strong>{isAdmin ? activeConversationId ? 'No messages yet' : 'Start a private conversation' : 'How can we help?'}</strong><p>{isAdmin ? 'Send a message to discuss an application or answer a member’s question.' : 'Send a message to the GulfBridge team. Replies will appear here.'}</p></div>}
               </div>
               <form className="inbox-compose" onSubmit={(event) => void sendInboxMessage(event)}>
                 <label className="sr-only" htmlFor="inbox-message">Write a message</label>
-                    <textarea id="inbox-message" name="message" rows={2} maxLength={4000} placeholder="Write a message…" required disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)} />
-                    <button className="button button-gold" type="submit" disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)}><Send size={15} /> Send</button>
+                <textarea id="inbox-message" name="message" rows={2} maxLength={4000} placeholder="Write a message…" required disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)} />
+                <button className="button button-gold" type="submit" disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)}><Send size={15} /> Send</button>
               </form>
-                  <p className="inbox-privacy"><LockKeyhole size={13} /> {!supabase ? 'Connect Supabase to enable secure messaging.' : 'Messages are private to the member and GulfBridge administrators.'}</p>
+              <p className="inbox-privacy"><LockKeyhole size={13} /> {!supabase ? 'Connect Supabase to enable secure messaging.' : 'Messages are private to the member and GulfBridge administrators.'}</p>
             </section>
           </section>
         </main>
@@ -2500,7 +2647,9 @@ function App() {
       <>
         <main>
           <section className="hero-section">
+            <img className="hero-photo" src={heroPhoto} alt="A team collaborating around a table in a modern workspace" />
             <div className="hero-grid-pattern" />
+            <div className="hero-photo-note"><span className="hero-photo-note-icon"><Globe2 size={17} /></span><span><strong>Good work can take you further</strong><small>Explore opportunities across 12 destinations</small></span></div>
             <div className="hero-content">
               <span className="eyebrow hero-eyebrow"><span className="eyebrow-dot" /> {t('heroEyebrow')}</span>
               <h1>{t('heroTitleA')}<br /><span>{t('heroTitleB')}</span></h1>
@@ -2601,6 +2750,7 @@ function App() {
         <div className="header-actions">
           <button className="language-toggle" onClick={() => setLanguage(isArabic ? 'en' : 'ar')} type="button" aria-label="Switch language"><Languages size={15} /><span>{t('language')}</span></button>
           <button className="theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
+          {account && <button className="header-message-button" onClick={() => navigate('inbox')} type="button" aria-label={unreadMessageCount ? `Messages, ${unreadMessageCount} unread` : 'Messages'} title="Messages"><MessageSquare size={17} />{unreadMessageCount > 0 && <span className="message-count-badge">{unreadMessageCount > 99 ? '99+' : unreadMessageCount}</span>}</button>}
           {installPrompt && <button className="button button-outline install-button" onClick={() => void installApp()} type="button"><ArrowDownToLine size={15} /><span>Install app</span></button>}
           {account ? <div className="account-menu"><button className="avatar-button" onClick={() => navigate('profile')} type="button" aria-label="Open profile">{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button><div className="account-dropdown"><button type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button type="button" onClick={() => navigate('inbox')}>Messages</button><button type="button" onClick={() => navigate('alerts')}>Job alerts</button><button type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : 'Job seeker view'}</button>{account.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button type="button" onClick={() => void handleSignOut()}>{t('logout')}</button></div></div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
           <button className="button button-gold header-post" onClick={openPostJob} type="button">{t('postJob')}</button>
@@ -2642,7 +2792,7 @@ function App() {
         <button className={page === 'jobs' ? 'active' : ''} onClick={() => navigate('jobs')} type="button"><Search size={19} /><span>{isArabic ? 'بحث' : 'Search'}</span></button>
         <button className={page === 'saved' ? 'active' : ''} onClick={() => navigate('saved')} type="button"><Heart size={19} /><span>{isArabic ? 'المحفوظة' : 'Saved'}</span></button>
         <button className={page === 'applications' ? 'active' : ''} onClick={() => navigate('applications')} type="button"><FileCheck2 size={19} /><span>{isArabic ? 'الطلبات' : 'Tracker'}</span></button>
-        <button className={page === 'profile' ? 'active' : ''} onClick={() => navigate('profile')} type="button"><UserRound size={19} /><span>{isArabic ? 'الملف' : 'Profile'}</span></button>
+        <button className={page === 'inbox' ? 'active' : ''} onClick={() => navigate('inbox')} type="button" aria-label={unreadMessageCount ? `Messages, ${unreadMessageCount} unread` : 'Messages'}><span className="mobile-message-icon"><MessageSquare size={19} />{unreadMessageCount > 0 && <i />}</span><span>Messages</span></button>
       </div>
 
       {activeJob && <JobModal job={activeJob} onClose={() => setActiveJob(null)} onApply={startApply} onSave={toggleSave} isSaved={savedIds.includes(activeJob.id)} t={t} toKes={toKes} />}
@@ -2650,6 +2800,13 @@ function App() {
       {authOpen && <AuthModal adminMode={adminLoginMode} onClose={() => { setAuthOpen(false); setAdminLoginMode(false) }} onSubmit={handleAuth} error={authError} notice={authNotice} configurationMessage={configurationMessage} />}
       {profileEditing && profileDraft && <ProfileModal profile={profileDraft} onChange={setProfileDraft} onClose={() => setProfileEditing(false)} onSubmit={saveProfile} t={t} />}
       {deleteConfirmOpen && <DeleteAccountModal onClose={() => setDeleteConfirmOpen(false)} onConfirm={() => void handleDeleteAccount()} isSubmitting={isSubmitting} />}
+      {messageAlert && <div className="message-toast" role="status"><button className="message-toast-open" type="button" onClick={() => {
+        const conversation = inboxConversations.find((item) => item.id === messageAlert.conversationId)
+        if (conversation) setInboxTargetUserId(conversation.user_id)
+        setActiveConversationId(messageAlert.conversationId)
+        setMessageAlert(null)
+        navigate('inbox')
+      }}><span className="message-toast-icon"><MessageSquare size={17} /></span><span><strong>New message</strong><small>Tap to open your GulfBridge inbox.</small></span><ArrowRight size={16} /></button><button className="message-toast-close" type="button" aria-label="Dismiss new message alert" onClick={() => setMessageAlert(null)}><X size={14} /></button></div>}
       {notice && <div className="toast" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice('')} type="button"><X size={15} /></button></div>}
     </div>
   )
