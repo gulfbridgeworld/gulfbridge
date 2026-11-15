@@ -25,11 +25,13 @@ import {
   Menu as MenuIcon,
   Mail,
   MapPin,
+  MessageSquare,
   Moon,
   MessageCircle,
   Plane,
   Sun,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -43,7 +45,7 @@ import { configurationMessage, isSupabaseConfigured, supabase } from './lib/supa
 import './App.css'
 
 type Language = 'en' | 'ar'
-type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help' | 'guides' | 'alerts'
+type Page = 'home' | 'jobs' | 'map' | 'saved' | 'applications' | 'profile' | 'recruiter' | 'admin' | 'help' | 'guides' | 'alerts' | 'inbox'
 type Theme = 'dark' | 'light'
 type JobAlert = {
   id: string
@@ -83,7 +85,9 @@ type AdminJob = {
   expires_at: string | null
 }
 type AdminJobUpdate = Pick<AdminJob, 'job_title' | 'agency_name' | 'country' | 'city' | 'category' | 'employment_type' | 'description' | 'salary_min' | 'salary_max' | 'salary_currency'>
-type AdminProfile = { id: string; email: string; full_name: string; phone: string; location: string; created_at: string; disabled: boolean; roles: string[] }
+type AdminProfile = { id: string; email: string; full_name: string; phone: string; location: string; created_at: string; disabled: boolean; roles: string[]; canManage?: boolean }
+type InboxConversation = { id: string; user_id: string; created_at: string; full_name: string; email: string }
+type InboxMessage = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string }
 type AdminCategory = { name: string; is_active: boolean }
 type AdminNews = { id: string; title: string; summary: string; country: string | null; source_url: string | null; is_published: boolean; published_at: string | null; created_at: string }
 type AdminScamReport = { id: string; job_id: string | null; employer_name: string; details: string; status: string; created_at: string }
@@ -172,7 +176,7 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
 }
 
-const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides', 'alerts']
+const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides', 'alerts', 'inbox']
 
 const countryHighlights = [
   { country: 'United Arab Emirates', city: 'Dubai', flag: '🇦🇪', code: 'UAE' },
@@ -472,6 +476,13 @@ function App() {
   const [adminUsersLoading, setAdminUsersLoading] = useState(false)
   const [adminUsersError, setAdminUsersError] = useState('')
   const [adminSearch, setAdminSearch] = useState('')
+  const [adminUsersRetry, setAdminUsersRetry] = useState(0)
+  const [inboxConversations, setInboxConversations] = useState<InboxConversation[]>([])
+  const [activeConversationId, setActiveConversationId] = useState('')
+  const [inboxTargetUserId, setInboxTargetUserId] = useState('')
+  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([])
+  const [inboxMessagesConversationId, setInboxMessagesConversationId] = useState('')
+  const [inboxLoading, setInboxLoading] = useState(false)
   const [adminCategories, setAdminCategories] = useState<AdminCategory[]>([])
   const [adminNews, setAdminNews] = useState<AdminNews[]>([])
   const [adminScamReports, setAdminScamReports] = useState<AdminScamReport[]>([])
@@ -503,7 +514,7 @@ function App() {
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       const nextPage = isAppPage(event.state?.gulfbridgePage) ? event.state.gulfbridgePage : 'home'
-      const requiresAccount = ['profile', 'saved', 'applications', 'recruiter'].includes(nextPage)
+      const requiresAccount = ['profile', 'saved', 'applications', 'recruiter', 'inbox'].includes(nextPage)
       if (requiresAccount && !account) {
         setPage('home')
         setAuthError('')
@@ -519,6 +530,7 @@ function App() {
         return
       }
       setPage(nextPage)
+      if (nextPage === 'inbox') setInboxLoading(true)
       if (nextPage === 'admin') {
         setAdminUsersLoading(true)
         setAdminUsersError('')
@@ -757,6 +769,8 @@ function App() {
     if (!supabase || !account || !account.roles.includes('admin') || page !== 'admin') return
     const client = supabase
     let active = true
+    setAdminUsersLoading(true)
+    setAdminUsersError('')
     void Promise.all([
       client.from('job_submissions').select('id,job_title,agency_name,country,city,review_status,review_note,payment_status,payment_amount,payment_currency,listing_plan,employer_market,created_at').in('review_status', ['pending', 'needs_changes']).order('created_at', { ascending: true }),
       client.from('listing_payments').select('id,submission_id,employer_id,amount,currency,method,provider_reference,status').eq('status', 'pending_confirmation').order('created_at', { ascending: true }),
@@ -803,11 +817,34 @@ function App() {
       if (usersResult.error) {
         const message = await getFunctionErrorMessage(usersResult.error)
         if (!active) return
-        setAdminUsersError(message)
-        setAdminProfiles([])
-        setNotice(`Could not load registered users: ${message}`)
+        const [{ data: profiles, error: profilesError }, { data: roleRows, error: rolesError }] = await Promise.all([
+          client.from('profiles').select('id,full_name,phone,location,created_at').order('created_at', { ascending: false }).limit(1000),
+          client.from('user_roles').select('user_id,role'),
+        ])
+        if (!active) return
+        if (profilesError || rolesError) {
+          const fallbackError = profilesError?.message || rolesError?.message || 'Admin profile access is unavailable.'
+          setAdminUsersError(`${message} Registered-user fallback also failed: ${fallbackError}`)
+          setAdminProfiles([])
+          setNotice(`Could not load registered users: ${fallbackError}`)
+        } else {
+          const rolesById = new Map<string, string[]>()
+          for (const role of roleRows || []) {
+            rolesById.set(role.user_id, [...(rolesById.get(role.user_id) || []), role.role])
+          }
+          setAdminUsersError(`${message} Showing profile records from the database. Email and suspend/restore controls require the admin-users Edge Function.`)
+          setAdminProfiles((profiles || []).map((profile) => ({
+            ...profile,
+            email: '',
+            disabled: false,
+            canManage: false,
+            roles: rolesById.get(profile.id) || [],
+          })))
+          setNotice(`The admin-users service is unavailable. Showing registered profiles; email and access controls are temporarily unavailable.`)
+        }
       } else {
-        setAdminProfiles(((usersResult.data as { users: AdminProfile[] } | null)?.users || []))
+        setAdminProfiles(((usersResult.data as { users: AdminProfile[] } | null)?.users || []).map((profile) => ({ ...profile, canManage: true })))
+        setAdminUsersError('')
       }
       setAdminUsersLoading(false)
       if (categoriesResult.error) setNotice(`Could not load job categories: ${categoriesResult.error.message}`)
@@ -821,7 +858,119 @@ function App() {
       active = false
       setAdminUsersLoading(false)
     }
-  }, [page, account?.id, account?.roles])
+  }, [page, account?.id, account?.roles, adminUsersRetry])
+
+  useEffect(() => {
+    if (!supabase || !account || page !== 'inbox' || account.id.startsWith('demo-')) return
+    const client = supabase
+    let active = true
+    const loadConversations = async () => {
+      if (account.roles.includes('admin')) {
+        const { data, error } = await client.from('inbox_conversations').select('id,user_id,created_at').order('created_at', { ascending: false }).limit(500)
+        if (error) {
+          if (active) {
+            setNotice(`Could not load inbox conversations: ${error.message}`)
+            setInboxLoading(false)
+          }
+          return
+        }
+        if (!adminProfiles.length) {
+          const [{ data: allProfiles, error: allProfilesError }, { data: roleRows, error: roleRowsError }] = await Promise.all([
+            client.from('profiles').select('id,full_name,phone,location,created_at').order('created_at', { ascending: false }).limit(1000),
+            client.from('user_roles').select('user_id,role'),
+          ])
+          if (allProfilesError || roleRowsError) {
+            if (active) {
+              setNotice(`Could not load registered inbox contacts: ${allProfilesError?.message || roleRowsError?.message}`)
+              setInboxLoading(false)
+            }
+            return
+          }
+          const rolesById = new Map<string, string[]>()
+          for (const role of roleRows || []) rolesById.set(role.user_id, [...(rolesById.get(role.user_id) || []), role.role])
+          if (active) setAdminProfiles((allProfiles || []).map((profile) => ({ ...profile, email: '', disabled: false, canManage: false, roles: rolesById.get(profile.id) || [] })))
+        }
+        const userIds = (data || []).map((conversation) => conversation.user_id)
+        const { data: profiles, error: profilesError } = userIds.length
+          ? await client.from('profiles').select('id,full_name').in('id', userIds)
+          : { data: [], error: null }
+        if (profilesError) {
+          if (active) {
+            setNotice(`Could not load inbox contacts: ${profilesError.message}`)
+            setInboxLoading(false)
+          }
+          return
+        }
+        if (!active) return
+        const names = new Map((profiles || []).map((profile) => [profile.id, profile.full_name]))
+        const conversations = (data || []).map((conversation) => ({
+          ...conversation,
+          full_name: names.get(conversation.user_id) || 'GulfBridge member',
+          email: adminProfiles.find((profile) => profile.id === conversation.user_id)?.email || '',
+        }))
+        setInboxConversations(conversations)
+        if (activeConversationId && conversations.some((conversation) => conversation.id === activeConversationId)) {
+          setInboxTargetUserId(conversations.find((conversation) => conversation.id === activeConversationId)?.user_id || '')
+        } else if (inboxTargetUserId && conversations.some((conversation) => conversation.user_id === inboxTargetUserId)) {
+          setActiveConversationId(conversations.find((conversation) => conversation.user_id === inboxTargetUserId)?.id || '')
+        } else if (conversations.length && !inboxTargetUserId) {
+          setActiveConversationId(conversations[0].id)
+          setInboxTargetUserId(conversations[0].user_id)
+        }
+      } else {
+        const { data, error } = await client.from('inbox_conversations').select('id,user_id,created_at').eq('user_id', account.id).maybeSingle()
+        if (error) {
+          if (active) {
+            setNotice(`Could not load your inbox: ${error.message}`)
+            setInboxLoading(false)
+          }
+          return
+        }
+        if (!active) return
+        const conversations = data ? [{ ...data, full_name: account.name, email: account.email }] : []
+        setInboxConversations(conversations)
+        if (data) {
+          setActiveConversationId(data.id)
+          setInboxTargetUserId(account.id)
+        } else {
+          setActiveConversationId('')
+          setInboxTargetUserId(account.id)
+        }
+      }
+      if (active) setInboxLoading(false)
+    }
+    void loadConversations()
+    const interval = window.setInterval(() => void loadConversations(), 5000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [page, account, adminUsersRetry, adminProfiles, activeConversationId, inboxTargetUserId])
+
+  useEffect(() => {
+    if (!supabase || !account || page !== 'inbox' || !activeConversationId) return
+    const client = supabase
+    let active = true
+    const loadMessages = async () => {
+      const { data, error } = await client.from('inbox_messages')
+        .select('id,conversation_id,sender_id,body,created_at')
+        .eq('conversation_id', activeConversationId)
+        .order('created_at', { ascending: true })
+      if (!active) return
+      if (error) {
+        setNotice(`Could not load inbox messages: ${error.message}`)
+        return
+      }
+      setInboxMessages((data || []) as InboxMessage[])
+      setInboxMessagesConversationId(activeConversationId)
+    }
+    void loadMessages()
+    const interval = window.setInterval(() => void loadMessages(), 5000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [page, account, activeConversationId])
 
   useEffect(() => {
     if (!supabase || page !== 'profile' || !account || account.id.startsWith('demo-')) return
@@ -976,7 +1125,7 @@ function App() {
 
   const navigate = (nextPage: Page) => {
     setMenuOpen(false)
-    if (['profile', 'saved', 'applications', 'alerts'].includes(nextPage) && !requireSignIn()) return
+    if (['profile', 'saved', 'applications', 'alerts', 'inbox'].includes(nextPage) && !requireSignIn()) return
     if (nextPage === 'recruiter' && !requireSignIn()) return
     if (nextPage === 'admin' && (!account || !account.roles.includes('admin'))) {
       setNotice('Admin review is available only to authorized admin accounts.')
@@ -992,6 +1141,7 @@ function App() {
       setAdminUsersLoading(true)
       setAdminUsersError('')
     }
+    if (nextPage === 'inbox') setInboxLoading(true)
     setPage(nextPage)
     setActiveJob(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -1869,7 +2019,7 @@ function App() {
   }
 
   const setAdminUserDisabled = async (profile: AdminProfile) => {
-    if (!supabase) return
+    if (!supabase || profile.canManage === false) return
     const disabled = !profile.disabled
     const { error } = await supabase.functions.invoke('admin-users', {
       body: { action: 'set-disabled', userId: profile.id, disabled },
@@ -1880,6 +2030,54 @@ function App() {
     }
     setAdminProfiles((current) => current.map((user) => user.id === profile.id ? { ...user, disabled } : user))
     setNotice(disabled ? 'User account access has been suspended.' : 'User account access has been restored.')
+  }
+
+  const sendInboxMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase || !account) return
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    const body = String(form.get('message') || '').trim()
+    if (!body) return
+    const client = supabase
+    let conversationId = activeConversationId
+    if (!conversationId) {
+      const userId = account.roles.includes('admin') ? inboxTargetUserId : account.id
+      if (!userId) {
+        setNotice('Choose a registered user before starting a conversation.')
+        return
+      }
+      const { data: conversation, error: conversationError } = await client
+        .from('inbox_conversations')
+        .insert({ user_id: userId })
+        .select('id,user_id,created_at')
+        .single()
+      if (conversationError) {
+        setNotice(`Could not start the conversation: ${conversationError.message}`)
+        return
+      }
+      conversationId = conversation.id
+      setActiveConversationId(conversationId)
+      setInboxConversations((current) => current.some((item) => item.id === conversationId)
+        ? current
+        : [...current, {
+            ...conversation,
+            full_name: account.roles.includes('admin')
+              ? adminProfiles.find((profile) => profile.id === userId)?.full_name || 'GulfBridge member'
+              : account.name,
+            email: '',
+          }])
+    }
+    const { error } = await client.from('inbox_messages').insert({
+      conversation_id: conversationId,
+      sender_id: account.id,
+      body,
+    })
+    if (error) {
+      setNotice(`Message could not be sent: ${error.message}`)
+      return
+    }
+    formElement.reset()
   }
 
   const renderPage = () => {
@@ -2020,8 +2218,20 @@ function App() {
     if (page === 'jobs' || page === 'saved') {
       const listing = page === 'saved' ? jobs.filter((job) => savedIds.includes(job.id)) : filteredJobs
       return (
-        <main className="page-shell">
+        <main className={`page-shell ${page === 'jobs' ? 'jobs-page-shell' : ''}`}>
           <PageHeading eyebrow={page === 'saved' ? 'Your shortlist' : 'Explore opportunities'} title={page === 'saved' ? 'Saved jobs' : t('jobsHeading')} description={page === 'saved' ? 'Return to opportunities you want to review.' : t('jobsSubheading')} action={page === 'jobs' ? <button className="button button-outline" type="button" onClick={() => navigate('alerts')}><BellRing size={15} /> Create job alert</button> : undefined} onBack={goBack} backLabel={t('back')} />
+          {page === 'jobs' && <section className="jobs-category-section" aria-labelledby="jobs-category-heading">
+            <div className="jobs-category-heading"><div><span className="eyebrow">Explore opportunities</span><h2 id="jobs-category-heading">Jobs by Category</h2></div><button className="text-button" type="button" onClick={() => setCategoryFilter('All fields')}>View all <ArrowRight size={15} /></button></div>
+            <div className="jobs-category-grid">
+              {categoryNames.slice(1).map((category, index) => {
+                const count = jobs.filter((job) => job.category.toLowerCase() === category.toLowerCase()).length
+                return <button className={`jobs-category-card ${categoryFilter === category ? 'active' : ''}`} key={category} type="button" onClick={() => setCategoryFilter(category)}>
+                  <span className={`jobs-category-icon tone-${index % 4}`}><BriefcaseBusiness size={19} /></span>
+                  <strong>{category}</strong><small>{count} {count === 1 ? 'role' : 'roles'}</small><ArrowRight className="jobs-category-arrow" size={14} />
+                </button>
+              })}
+            </div>
+          </section>}
           <FilterBar
             destinations={destinations}
             categories={categoryNames}
@@ -2050,6 +2260,52 @@ function App() {
             <div className="application-list">{applications.map((application) => <ApplicationCard key={application.id} application={application} />)}</div>
           )}
           {applications.length > 0 && <div className="notice-card"><ShieldCheck size={18} /><span>Visa and travel stages reflect reported progress, not an official immigration decision.</span></div>}
+        </main>
+      )
+    }
+
+    if (page === 'inbox') {
+      const isAdmin = account?.roles.includes('admin') || false
+      const activeConversation = inboxConversations.find((conversation) => conversation.id === activeConversationId)
+      const targetUser = adminProfiles.find((profile) => profile.id === inboxTargetUserId)
+      const currentMessages = inboxMessagesConversationId === activeConversationId ? inboxMessages : []
+      return (
+        <main className="page-shell">
+          <PageHeading eyebrow={isAdmin ? 'Admin workspace' : 'Your account'} title="Messages" description={isAdmin ? 'Reply to members and follow up on their applications in one private inbox.' : 'Contact the GulfBridge team and follow up on your applications.'} onBack={goBack} backLabel={t('back')} />
+          <section className={`inbox-layout ${isAdmin ? 'inbox-admin' : ''}`}>
+            {isAdmin && <aside className="panel inbox-contacts">
+              <div className="inbox-contact-heading"><strong>Conversations</strong><span>{inboxConversations.length}</span></div>
+              <label className="form-label">Start a conversation
+                <select value={inboxTargetUserId} onChange={(event) => {
+                  const userId = event.target.value
+                  setInboxTargetUserId(userId)
+                  setActiveConversationId(inboxConversations.find((conversation) => conversation.user_id === userId)?.id || '')
+                }}>
+                  <option value="">Select a registered user</option>
+                  {adminProfiles.filter((profile) => !profile.roles.includes('admin')).map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || 'GulfBridge member'}{profile.email ? ` · ${profile.email}` : ''}</option>)}
+                </select>
+              </label>
+              {inboxConversations.map((conversation) => <button className={`inbox-contact ${activeConversationId === conversation.id ? 'active' : ''}`} key={conversation.id} type="button" onClick={() => { setActiveConversationId(conversation.id); setInboxTargetUserId(conversation.user_id) }}>
+                <span className="company-avatar">{getInitials(conversation.full_name || 'GB')}</span><span><strong>{conversation.full_name}</strong><small>{conversation.email || 'GulfBridge member'}</small></span>
+              </button>)}
+              {!inboxConversations.length && <p className="queue-empty-note">No conversations yet. Choose a registered user above to send the first message.</p>}
+            </aside>}
+            <section className="panel inbox-thread">
+              <div className="inbox-thread-heading">
+                <span className="company-avatar"><MessageSquare size={18} /></span>
+                <div><strong>{isAdmin ? activeConversation?.full_name || targetUser?.full_name || 'Select a member' : 'GulfBridge support'}</strong><small>{isAdmin ? activeConversation?.email || targetUser?.email || 'Private member conversation' : 'Private conversation with the GulfBridge team'}</small></div>
+              </div>
+              <div className="inbox-message-list" aria-live="polite">
+                {inboxLoading ? <p className="queue-empty-note">Loading conversations…</p> : currentMessages.length ? currentMessages.map((message) => <article className={`inbox-message ${message.sender_id === account?.id ? 'mine' : ''}`} key={message.id}><p>{message.body}</p><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleString()}</time></article>) : <div className="inbox-empty"><MessageSquare size={25} /><strong>{isAdmin ? activeConversationId ? 'No messages yet' : 'Start a private conversation' : 'How can we help?'}</strong><p>{isAdmin ? 'Send a message to discuss an application or answer a member’s question.' : 'Send a message to the GulfBridge team. Replies will appear here.'}</p></div>}
+              </div>
+              <form className="inbox-compose" onSubmit={(event) => void sendInboxMessage(event)}>
+                <label className="sr-only" htmlFor="inbox-message">Write a message</label>
+                    <textarea id="inbox-message" name="message" rows={2} maxLength={4000} placeholder="Write a message…" required disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)} />
+                    <button className="button button-gold" type="submit" disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)}><Send size={15} /> Send</button>
+              </form>
+                  <p className="inbox-privacy"><LockKeyhole size={13} /> {!supabase ? 'Connect Supabase to enable secure messaging.' : 'Messages are private to the member and GulfBridge administrators.'}</p>
+            </section>
+          </section>
         </main>
       )
     }
@@ -2148,6 +2404,7 @@ function App() {
               <button type="button" onClick={() => adminNav('admin-jobs')}><BriefcaseBusiness size={17} /> Job Management</button>
               <button type="button" onClick={() => adminNav('admin-applications')}><FileCheck2 size={17} /> Applications</button>
               <button type="button" onClick={() => adminNav('admin-users')}><UserRound size={17} /> User Management</button>
+              <button type="button" onClick={() => navigate('inbox')}><MessageSquare size={17} /> Messages</button>
             </nav>
             <p className="admin-nav-label">Platform</p>
             <nav className="admin-nav" aria-label="Platform management">
@@ -2204,7 +2461,8 @@ function App() {
                 </section>
                 <section className="panel admin-queue" id="admin-users">
                   <div className="panel-heading"><div><span className="eyebrow">Registered accounts</span><h2>Recent users and access roles</h2></div><span className="status-pill">{adminUsersLoading ? 'Loading…' : `${adminProfiles.length} shown`}</span></div>
-                  {adminUsersError ? <div className="admin-inline-error" role="alert"><strong>Registered users could not be loaded</strong><p>{adminUsersError}</p><small>Check that the admin-users Edge Function is deployed and its ALLOWED_ORIGINS secret matches your website origin exactly.</small></div> : adminUsersLoading ? <p className="queue-empty-note">Loading registered accounts…</p> : adminProfiles.length ? <div className="admin-user-list">{adminProfiles.map((profile) => <article className="admin-user-row" key={profile.id}><span className="company-avatar">{getInitials(profile.full_name || 'GB')}</span><span><strong>{profile.full_name || 'GulfBridge member'}</strong><small>{profile.email} · {profile.phone || 'No phone'} · {profile.location || 'Location not set'}</small></span><span className="user-role-list">{profile.roles.join(', ') || 'seeker'}</span>{profile.roles.includes('admin') ? <span className="status-pill">Admin protected</span> : <button className="button button-outline" type="button" onClick={() => void setAdminUserDisabled(profile)}>{profile.disabled ? 'Restore access' : 'Suspend access'}</button>}</article>)}</div> : <p className="queue-empty-note">No registered users were found.</p>}
+                  {adminUsersError && <div className="admin-inline-error" role="status"><strong>Some admin controls are unavailable</strong><p>{adminUsersError}</p><button className="button button-outline" type="button" onClick={() => setAdminUsersRetry((count) => count + 1)}>Retry user service</button></div>}
+                  {adminUsersLoading ? <p className="queue-empty-note">Loading registered accounts…</p> : adminProfiles.length ? <div className="admin-user-list">{adminProfiles.map((profile) => <article className="admin-user-row" key={profile.id}><span className="company-avatar">{getInitials(profile.full_name || 'GB')}</span><span><strong>{profile.full_name || 'GulfBridge member'}</strong><small>{[profile.email, profile.phone || 'No phone', profile.location || 'Location not set'].filter(Boolean).join(' · ')}</small></span><span className="user-role-list">{profile.roles.join(', ') || 'seeker'}</span>{profile.roles.includes('admin') ? <span className="status-pill">Admin protected</span> : <><button className="button button-outline" type="button" onClick={() => { setInboxTargetUserId(profile.id); setActiveConversationId(inboxConversations.find((conversation) => conversation.user_id === profile.id)?.id || ''); navigate('inbox') }}>Message</button>{profile.canManage === false ? <span className="status-pill">Controls unavailable</span> : <button className="button button-outline" type="button" onClick={() => void setAdminUserDisabled(profile)}>{profile.disabled ? 'Restore access' : 'Suspend access'}</button>}</>}</article>)}</div> : <p className="queue-empty-note">{adminUsersError ? 'The profile fallback also failed; use Retry after checking Supabase access.' : 'No registered users were found.'}</p>}
                   <p className="fine-print">Admin accounts are protected from suspension here. Roles and passwords are never set from this dashboard.</p>
                 </section>
                 <section className="panel admin-queue" id="admin-categories">
@@ -2233,6 +2491,10 @@ function App() {
         </main>
       )
     }
+
+    const verifiedEmployerListings = [...new Map(
+      jobs.filter((job) => job.verified).map((job) => [job.company, job]),
+    ).values()].slice(0, 4)
 
     return (
       <>
@@ -2298,6 +2560,17 @@ function App() {
             <p className="salary-note"><CircleHelp size={15} /> {t('salaryNote')} {rateDate ? `Rate data updated ${new Date(rateDate).toLocaleDateString()}.` : 'KSh estimates appear when a public rate is available.'}</p>
           </section>
 
+          {verifiedEmployerListings.length > 0 && <section className="home-section verified-employers-section">
+            <div className="section-heading"><div><span className="eyebrow">Reviewed employer profiles</span><h2>Verified employers & agencies</h2><p>Organizations shown here have passed GulfBridge’s listing review.</p></div><button className="text-button" type="button" onClick={() => { setVerifiedOnly(true); navigate('jobs') }}>Browse verified jobs <ArrowRight size={15} /></button></div>
+            <div className="verified-employer-grid">
+              {verifiedEmployerListings.map((job) => <button className="verified-employer-card" key={job.company} type="button" onClick={() => setActiveJob(job)}>
+                <span className="company-avatar company-avatar-large">{getInitials(job.company)}</span>
+                <span className="verified-employer-copy"><strong>{job.company}</strong><small>{job.city}, {job.country} · {job.category}</small></span>
+                <span className="badge-verified"><BadgeCheck size={13} /> Verified</span>
+              </button>)}
+            </div>
+          </section>}
+
           <section className="home-section how-section">
             <div className="section-heading"><div><span className="eyebrow">Made for your journey</span><h2>{t('stepTitle')}</h2><p>{t('stepDescription')}</p></div><button className="button button-outline" type="button" onClick={() => navigate('applications')}>View tracker <ArrowRight size={16} /></button></div>
             <div className="journey-steps">{['Applied', 'Interview', 'Offer', 'Visa', 'Flight'].map((step, index) => <div className="journey-step" key={step}><span className={`journey-number ${index === 0 ? 'current' : ''}`}>{index === 0 ? <Check size={15} /> : `0${index + 1}`}</span><div><strong>{step}</strong><small>{index === 0 ? 'Start your application' : 'Updates from your employer'}</small></div></div>)}</div>
@@ -2320,7 +2593,7 @@ function App() {
   }
 
   return (
-    <div className={`app-root ${isArabic ? 'is-rtl' : ''} ${page === 'admin' ? 'admin-app' : ''}`}>
+    <div className={`app-root ${isArabic ? 'is-rtl' : ''} ${page === 'admin' ? 'admin-app' : ''} ${page === 'jobs' ? 'jobs-app' : ''}`}>
       <header className="site-header">
         <a className="brand" href="#admin" onClick={(event) => { event.preventDefault(); openAdminAccess() }} aria-label="GulfBridge admin sign-in" title="Admin sign-in">
           <span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span>
@@ -2329,7 +2602,7 @@ function App() {
           <button className="language-toggle" onClick={() => setLanguage(isArabic ? 'en' : 'ar')} type="button" aria-label="Switch language"><Languages size={15} /><span>{t('language')}</span></button>
           <button className="theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
           {installPrompt && <button className="button button-outline install-button" onClick={() => void installApp()} type="button"><ArrowDownToLine size={15} /><span>Install app</span></button>}
-          {account ? <div className="account-menu"><button className="avatar-button" onClick={() => navigate('profile')} type="button" aria-label="Open profile">{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button><div className="account-dropdown"><button type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button type="button" onClick={() => navigate('alerts')}>Job alerts</button><button type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : 'Job seeker view'}</button>{account.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button type="button" onClick={() => void handleSignOut()}>{t('logout')}</button></div></div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
+          {account ? <div className="account-menu"><button className="avatar-button" onClick={() => navigate('profile')} type="button" aria-label="Open profile">{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button><div className="account-dropdown"><button type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button type="button" onClick={() => navigate('inbox')}>Messages</button><button type="button" onClick={() => navigate('alerts')}>Job alerts</button><button type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : 'Job seeker view'}</button>{account.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button type="button" onClick={() => void handleSignOut()}>{t('logout')}</button></div></div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
           <button className="button button-gold header-post" onClick={openPostJob} type="button">{t('postJob')}</button>
           <button className="mobile-menu-button" onClick={() => setMenuOpen((open) => !open)} type="button" aria-expanded={menuOpen} aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}>{menuOpen ? <X size={21} /> : <MenuIcon size={21} />}</button>
         </div>
@@ -2343,6 +2616,7 @@ function App() {
         <button type="button" onClick={() => navigate('map')}><MapPin size={17} /> Explore map</button>
         <button type="button" onClick={() => navigate('guides')}><BookOpen size={17} /> Career guides</button>
         <button type="button" onClick={() => navigate('alerts')}><BellRing size={17} /> Job alerts</button>
+        {account && <button type="button" onClick={() => navigate('inbox')}><MessageSquare size={17} /> Messages</button>}
         <button type="button" onClick={() => navigate('help')}><ShieldCheck size={17} /> Help & safety</button>
         <button type="button" onClick={openPostJob}><BriefcaseBusiness size={17} /> For employers</button>
         {account && <button type="button" onClick={() => navigate('applications')}><FileCheck2 size={17} /> Applications</button>}
@@ -2434,17 +2708,26 @@ function FilterBar({ destinations: destinationOptions, categories, destination, 
 function JobModal({ job, onClose, onApply, onSave, isSaved, t, toKes }: { job: Job; onClose: () => void; onApply: (job: Job) => void; onSave: (job: Job) => void; isSaved: boolean; t: (key: TranslationKey) => string; toKes: (amount: number, currency: string) => number | null }) {
   return (
     <Modal onClose={onClose} className="job-detail-modal">
-      <div className="job-modal-header"><div className="company-avatar company-avatar-large">{getInitials(job.company)}</div><button className="icon-button modal-close" type="button" aria-label="Close" onClick={onClose}><X size={20} /></button></div>
-      <span className="eyebrow">{job.city}, {job.country} · {job.category}</span>
+      <button className="icon-button modal-close" type="button" aria-label="Close" onClick={onClose}><X size={20} /></button>
+      <div className="job-detail-layout">
+        <aside className="job-detail-summary">
+          <div className="job-modal-header"><div className="company-avatar company-avatar-large">{getInitials(job.company)}</div></div>
+          <span className="job-detail-brand">{job.verified ? <BadgeCheck size={15} /> : <ShieldCheck size={15} />}{job.verified ? 'Verified employer' : 'Employer review status'}</span>
       <h2>{job.title}</h2><p className="job-modal-company">{job.company}</p>
       <div className="job-badges">{job.verified ? <span className="badge-verified"><BadgeCheck size={13} /> {t('verified')}</span> : <span className="badge-neutral">Verification not confirmed</span>}{job.premium && <span className="badge-premium"><Sparkles size={12} /> Premium employer</span>}</div>
       <div className="job-modal-salary"><WalletCards size={17} /><div><strong>{currencyRange(job, toKes)}</strong><small>{t('salaryNote')}</small></div></div>
-      <p className="job-description">{job.description}</p>
+      <div className="job-detail-facts"><span><MapPin size={14} />{job.city}, {job.country}</span><span><BriefcaseBusiness size={14} />{job.category}</span><span><Check size={14} />{job.employmentType}</span></div>
+      </aside>
+      <div className="job-detail-content">
+      <span className="eyebrow">{job.city}, {job.country} · {job.category}</span>
+      <section><h3>Job description</h3><p className="job-description">{job.description}</p></section>
       <section><h3>Requirements</h3><ul className="check-list">{job.requirements.map((requirement) => <li key={requirement}><Check size={15} />{requirement}</li>)}</ul></section>
       <section><h3>Benefits listed by employer</h3><ul className="check-list">{job.benefits.map((benefit) => <li key={benefit}><Check size={15} />{benefit}</li>)}</ul></section>
       <div className="privacy-callout"><LockKeyhole size={17} /><span>Your CV and ID/passport stay private and are shared only for this application with authorized parties.</span></div>
       <div className="modal-actions"><button className="button button-gold" onClick={() => onApply(job)} type="button">{t('apply')} <ArrowRight size={16} /></button><button className="button button-outline" onClick={() => onSave(job)} type="button"><Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />{isSaved ? t('saved') : t('save')}</button>{job.premium && job.whatsapp && <a className="button button-whatsapp" href={`https://wa.me/${job.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />Contact company on WhatsApp</a>}</div>
       <p className="fine-print">WhatsApp opens a direct conversation with the premium employer. Do not send sensitive identity documents over WhatsApp. GulfBridge applications remain on-platform.</p>
+      </div>
+      </div>
     </Modal>
   )
 }
