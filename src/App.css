@@ -152,7 +152,7 @@
 }
 .user-name-button { display: flex; align-items: center; gap: 3px; padding: 6px 0; color: #e6e5e0; border: 0; background: none; cursor: pointer; font-size: 12px; }
 .account-dropdown { min-width: 190px; display: none; position: absolute; top: calc(100% + 15px); right: 0; padding: 7px; border: 1px solid var(--line); border-radius: 13px; background: #141a25; box-shadow: 0 20px 50px rgba(0,0,0,.4); }
-.account-menu:hover .account-dropdown, .account-menu:focus-within .account-dropdown { display: grid; }
+.account-menu.open .account-dropdown { display: grid; }
 .account-dropdown button { padding: 10px; text-align: left; color: #d7d9de; border: 0; border-radius: 8px; background: transparent; cursor: pointer; font-size: 12px; }
 .account-dropdown button:hover { color: var(--gold-light); background: rgba(228,189,112,.08); }
 
@@ -507,6 +507,12 @@
 .info-row small { color: #818b99; font-size: 9px; }
 .info-row strong { overflow-wrap: anywhere; color: #e1e2e4; font-size: 11px; font-weight: 600; }
 .profile-details { padding: 20px 23px; }
+.profile-privacy-note { margin: 0 0 12px; padding: 10px 12px; color: var(--muted); border: 1px solid var(--line-cool); border-radius: 9px; background: var(--panel-2); font-size: 10px; line-height: 1.55; }
+.help-verification-panel, .scam-report-panel { margin-top: 16px; padding: 20px; }
+.help-verification-panel > p, .scam-report-panel .stack-form > p, .scam-report-panel > p { color: var(--muted); font-size: 11px; line-height: 1.65; }
+.verification-review-date { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; }
+.map-tile-error { margin: 0; padding: 10px 14px; color: var(--danger); font-size: 11px; }
+.map-tile-error button { margin-inline-start: 8px; padding: 4px 8px; color: var(--link); border: 1px solid var(--line-cool); border-radius: 6px; background: var(--panel-2); cursor: pointer; }
 .panel-heading { align-items: center; }
 .panel-heading h2 { margin: 7px 0 0; font-size: 18px; }
 .panel-heading .eyebrow { font-size: 9px; }
@@ -819,7 +825,7 @@
   .mobile-bottom-nav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #929ba8; border: 0; border-radius: 10px; background: transparent; cursor: pointer; font-size: 7px; }
   .mobile-bottom-nav button.active { color: var(--gold-light); background: rgba(228,189,112,.08); }
   .mobile-bottom-nav button svg { width: 17px; height: 17px; }
-  .page-shell { min-height: 60vh; padding: 39px 0 60px; }
+  .page-shell { min-height: 60vh; padding: 39px 0 calc(88px + env(safe-area-inset-bottom)); }
   .page-heading { margin-bottom: 20px; flex-direction: column; }
   .page-heading h1 { margin-top: 8px; font-size: 27px; }
   .page-heading > .button { min-height: 35px; }

@@ -198,11 +198,11 @@ const countryHighlights = [
 ]
 
 const careerGuides = [
-  { icon: BriefcaseBusiness, title: 'How to apply for jobs abroad', description: 'Prepare a clear CV, check the job requirements, and follow each application step.' },
-  { icon: MessageCircle, title: 'Interview preparation', description: 'Practice examples from your experience and prepare thoughtful questions for the employer.' },
-  { icon: Globe2, title: 'Living and working abroad', description: 'Research local work rules, expected living costs, and the details of your written contract.' },
-  { icon: WalletCards, title: 'Understand your salary', description: 'Compare the stated currency, pay period, deductions, accommodation, and other benefits.' },
-  { icon: ShieldCheck, title: 'Avoiding job scams', description: 'Verify employers independently and be cautious of requests for unofficial upfront fees.' },
+  { icon: BriefcaseBusiness, title: 'How to apply for jobs abroad', titleAr: 'كيفية التقديم على وظائف في الخارج', description: 'Prepare a clear CV, check the job requirements, and follow each application step.', descriptionAr: 'أعدّ سيرة ذاتية واضحة، وتحقق من متطلبات الوظيفة، واتبع خطوات التقديم.' },
+  { icon: MessageCircle, title: 'Interview preparation', titleAr: 'الاستعداد للمقابلة', description: 'Practice examples from your experience and prepare thoughtful questions for the employer.', descriptionAr: 'تدرّب على أمثلة من خبرتك وجهّز أسئلة مناسبة لصاحب العمل.' },
+  { icon: Globe2, title: 'Living and working abroad', titleAr: 'العيش والعمل في الخارج', description: 'Research local work rules, expected living costs, and the details of your written contract.', descriptionAr: 'ابحث عن قوانين العمل وتكاليف المعيشة وتفاصيل عقدك المكتوب.' },
+  { icon: WalletCards, title: 'Understand your salary', titleAr: 'افهم راتبك', description: 'Compare the stated currency, pay period, deductions, accommodation, and other benefits.', descriptionAr: 'قارن العملة وفترة الدفع والاستقطاعات والسكن والمزايا الأخرى.' },
+  { icon: ShieldCheck, title: 'Avoiding job scams', titleAr: 'تجنب الاحتيال الوظيفي', description: 'Verify employers independently and be cautious of requests for unofficial upfront fees.', descriptionAr: 'تحقق من أصحاب العمل بشكل مستقل واحذر طلب الرسوم المسبقة غير الرسمية.' },
 ]
 
 function isAppPage(value: unknown): value is Page {
@@ -345,6 +345,40 @@ const countries: Record<string, string> = {
   Poland: 'PL',
 }
 
+const arabicCountries: Record<string, string> = {
+  'United Arab Emirates': 'الإمارات العربية المتحدة',
+  'Saudi Arabia': 'المملكة العربية السعودية',
+  Qatar: 'قطر',
+  Kuwait: 'الكويت',
+  Oman: 'عُمان',
+  Bahrain: 'البحرين',
+  Canada: 'كندا',
+  'United States': 'الولايات المتحدة',
+  'United Kingdom': 'المملكة المتحدة',
+  Germany: 'ألمانيا',
+  Australia: 'أستراليا',
+  Poland: 'بولندا',
+}
+
+const arabicCategories: Record<string, string> = {
+  'All fields': 'كل المجالات',
+  Healthcare: 'الرعاية الصحية',
+  Driver: 'سائق',
+  Construction: 'البناء',
+  Hospitality: 'الضيافة',
+  Technician: 'فني',
+  Logistics: 'الخدمات اللوجستية',
+  'Customer service': 'خدمة العملاء',
+}
+
+function localizeCountry(country: string, isArabic: boolean) {
+  return isArabic ? arabicCountries[country] || country : country
+}
+
+function localizeCategory(category: string, isArabic: boolean) {
+  return isArabic ? arabicCategories[category] || category : category
+}
+
 const cityCoordinates: Record<string, [number, number]> = {
   Dubai: [25.2048, 55.2708],
   Riyadh: [24.7136, 46.6753],
@@ -467,9 +501,11 @@ function App() {
   const [profileEditing, setProfileEditing] = useState(false)
   const [profileDraft, setProfileDraft] = useState<Account | null>(null)
   const [savedIds, setSavedIds] = useState<string[]>([])
+  const [savedJobsLoading, setSavedJobsLoading] = useState(isSupabaseConfigured)
   const [applications, setApplications] = useState<ApplicationRecord[]>([])
   const [employerApplications, setEmployerApplications] = useState<EmployerApplication[]>([])
   const [jobs, setJobs] = useState<Job[]>(() => import.meta.env.DEV && !isSupabaseConfigured ? starterJobs : [])
+  const [jobsLoading, setJobsLoading] = useState(isSupabaseConfigured)
   const [mySubmissions, setMySubmissions] = useState<RecruiterSubmission[]>([])
   const [premiumRequests, setPremiumRequests] = useState<PremiumRequest[]>([])
   const [adminReviews, setAdminReviews] = useState<AdminReview[]>([])
@@ -494,12 +530,15 @@ function App() {
   const [unreadMessagesByConversation, setUnreadMessagesByConversation] = useState<Record<string, number>>({})
   const [messageAlert, setMessageAlert] = useState<MessageAlert | null>(null)
   const seenInboxMessageIds = useRef(new Set<string>())
+  const accountMenuRef = useRef<HTMLDivElement>(null)
   const [adminCategories, setAdminCategories] = useState<AdminCategory[]>([])
   const [adminNews, setAdminNews] = useState<AdminNews[]>([])
   const [adminScamReports, setAdminScamReports] = useState<AdminScamReport[]>([])
   const [notice, setNotice] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isScamReportSubmitting, setIsScamReportSubmitting] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
   const [profileDocuments, setProfileDocuments] = useState<Array<{ id: string; storage_path: string; original_filename: string; document_kind: string; created_at: string }>>([])
@@ -519,13 +558,31 @@ function App() {
   }, [theme])
 
   useEffect(() => {
+    if (!accountMenuOpen) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (event.target instanceof Node && !accountMenuRef.current?.contains(event.target)) {
+        setAccountMenuOpen(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [accountMenuOpen])
+
+  useEffect(() => {
     window.history.replaceState({ ...window.history.state, gulfbridgePage: 'home' }, '')
   }, [])
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       const nextPage = isAppPage(event.state?.gulfbridgePage) ? event.state.gulfbridgePage : 'home'
-      const requiresAccount = ['profile', 'saved', 'applications', 'recruiter', 'inbox'].includes(nextPage)
+      const requiresAccount = ['profile', 'saved', 'applications', 'recruiter', 'inbox', 'alerts'].includes(nextPage)
       if (requiresAccount && !account) {
         setPage('home')
         setAuthError('')
@@ -588,9 +645,29 @@ function App() {
         setAccountFromUser(session.user)
       } else {
         setAccount(null)
+        setSavedIds([])
+        setSavedJobsLoading(false)
+        setApplications([])
+        setEmployerApplications([])
+        setMySubmissions([])
+        setPremiumRequests([])
+        setProfileDocuments([])
+        setJobAlerts([])
+        setJobNotifications([])
+        setInboxConversations([])
+        setActiveConversationId('')
+        setInboxMessages([])
+        setInboxMessagesConversationId('')
+        setAdminProfiles([])
         setUnreadMessageCount(0)
         setUnreadMessagesByConversation({})
         setMessageAlert(null)
+        setMenuOpen(false)
+        setAccountMenuOpen(false)
+        if (['profile', 'saved', 'applications', 'recruiter', 'inbox', 'alerts'].includes(String(window.history.state?.gulfbridgePage))) {
+          setPage('home')
+          window.history.replaceState({ gulfbridgePage: 'home' }, '')
+        }
       }
     })
     return () => data.subscription.unsubscribe()
@@ -697,12 +774,16 @@ function App() {
   }, [account?.id])
 
   useEffect(() => {
-    if (!supabase || !isSupabaseConfigured) return
+    if (!supabase || !isSupabaseConfigured) {
+      setJobsLoading(false)
+      return
+    }
     let active = true
     void supabase.from('published_jobs').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
       if (!active) return
       if (error) {
         setNotice(`Could not load approved jobs: ${error.message}`)
+        setJobsLoading(false)
         return
       }
       const liveJobs: Job[] = (data || []).map((row) => ({
@@ -721,12 +802,14 @@ function App() {
         requirements: [],
         benefits: [],
         verified: Boolean(row.verification_status),
+        verificationCheckedAt: row.verification_checked_at || undefined,
         premium: row.listing_plan === 'premium',
         whatsapp: row.whatsapp_contact || undefined,
         coordinates: cityCoordinates[row.city] || [25.1, 49.5],
         posted: new Date(row.created_at).toLocaleDateString(),
       }))
       setJobs(liveJobs)
+      setJobsLoading(false)
     })
     return () => { active = false }
   }, [])
@@ -1166,10 +1249,16 @@ function App() {
   }, [page, account?.id, account?.roles])
 
   useEffect(() => {
-    if (!supabase || !account || account.id.startsWith('demo-')) return
+    if (!supabase || !account || account.id.startsWith('demo-')) {
+      setSavedJobsLoading(false)
+      if (!account) setSavedIds([])
+      return
+    }
     let active = true
+    setSavedJobsLoading(true)
     void supabase.from('saved_jobs').select('job_id').eq('applicant_id', account.id).then(({ data, error }) => {
       if (!active) return
+      setSavedJobsLoading(false)
       if (error) {
         setNotice(`Could not load saved jobs: ${error.message}`)
         return
@@ -1267,6 +1356,7 @@ function App() {
 
   const navigate = (nextPage: Page) => {
     setMenuOpen(false)
+    setAccountMenuOpen(false)
     if (['profile', 'saved', 'applications', 'alerts', 'inbox'].includes(nextPage) && !requireSignIn()) return
     if (nextPage === 'recruiter' && !requireSignIn()) return
     if (nextPage === 'admin' && (!account || !account.roles.includes('admin'))) {
@@ -1306,6 +1396,43 @@ function App() {
     event.preventDefault()
     navigate('jobs')
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const submitScamReport = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!supabase) {
+      setNotice(isArabic ? 'أرسل البلاغ إلى gulfbridgeworld@gmail.com.' : 'Send your report to gulfbridgeworld@gmail.com.')
+      return
+    }
+
+    const formElement = event.currentTarget
+    const values = new FormData(formElement)
+    const employerName = String(values.get('employerName') || '').trim()
+    const jobTitle = String(values.get('jobTitle') || '').trim()
+    const details = String(values.get('details') || '').trim()
+    if (details.length < 10) {
+      setNotice(isArabic ? 'أضف تفاصيل لا تقل عن 10 أحرف.' : 'Add at least 10 characters of detail.')
+      return
+    }
+
+    setIsScamReportSubmitting(true)
+    try {
+      const { error } = await supabase.from('scam_reports').insert({
+        reporter_id: account && !account.id.startsWith('demo-') ? account.id : null,
+        employer_name: employerName,
+        details: [jobTitle ? `Listing: ${jobTitle}` : '', details].filter(Boolean).join('\n\n'),
+      })
+      if (error) {
+        setNotice(`${isArabic ? 'تعذّر إرسال البلاغ' : 'Report could not be submitted'}: ${error.message}`)
+        return
+      }
+      formElement.reset()
+      setNotice(isArabic ? 'تم إرسال البلاغ إلى فريق السلامة للمراجعة.' : 'Your report was sent to the safety team for review.')
+    } catch (error) {
+      setNotice(`${isArabic ? 'تعذّر إرسال البلاغ' : 'Report could not be submitted'}: ${error instanceof Error ? error.message : 'Please try again.'}`)
+    } finally {
+      setIsScamReportSubmitting(false)
+    }
   }
 
   const createJobAlert = async (event: FormEvent<HTMLFormElement>) => {
@@ -1880,8 +2007,11 @@ function App() {
       return
     }
     if (role === 'recruiter' && supabase && !account.id.startsWith('demo-') && !account.roles.includes('recruiter')) {
-      const { error } = await supabase.from('user_roles').insert({ user_id: account.id, role: 'recruiter' })
-      if (error && error.code !== '23505') {
+      const { error } = await supabase.from('user_roles').upsert(
+        { user_id: account.id, role: 'recruiter' },
+        { onConflict: 'user_id,role', ignoreDuplicates: true },
+      )
+      if (error) {
         setNotice(`Could not enable recruiter access: ${error.message}`)
         return
       }
@@ -2235,27 +2365,27 @@ function App() {
     if (page === 'alerts') {
       return (
         <main className="page-shell">
-          <PageHeading eyebrow="Your opportunities" title="Job alerts & notifications" description="Save the roles and destinations you care about. We’ll show matching new listings in your GulfBridge inbox." onBack={goBack} backLabel={t('back')} />
+          <PageHeading eyebrow={isArabic ? 'فرصك' : 'Your opportunities'} title={isArabic ? 'تنبيهات الوظائف والإشعارات' : 'Job alerts & notifications'} description={isArabic ? 'احفظ المهن والوجهات التي تهمك لتصلك الفرص المطابقة في صندوق وارد GulfBridge.' : 'Save the roles and destinations you care about. We’ll show matching new listings in your GulfBridge inbox.'} onBack={goBack} backLabel={t('back')} />
           <div className="alerts-layout">
             <section className="panel alert-create-panel">
-              <div className="panel-heading"><div><span className="eyebrow">Personalize your search</span><h2>Create a job alert</h2></div><BellRing size={20} /></div>
+              <div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'خصص بحثك' : 'Personalize your search'}</span><h2>{isArabic ? 'إنشاء تنبيه وظيفي' : 'Create a job alert'}</h2></div><BellRing size={20} /></div>
               <form className="stack-form" onSubmit={createJobAlert}>
-                <label className="form-label">Job title or keyword<input name="keyword" placeholder="e.g. nurse, driver, hospitality" /></label>
+                <label className="form-label">{isArabic ? 'المسمى الوظيفي أو كلمة البحث' : 'Job title or keyword'}<input name="keyword" placeholder={isArabic ? 'مثال: ممرض، سائق، ضيافة' : 'e.g. nurse, driver, hospitality'} /></label>
                 <div className="form-grid">
-                  <label className="form-label">Country<select name="country" defaultValue=""><option value="">Any country</option>{countryHighlights.map(({ country }) => <option key={country} value={country}>{country}</option>)}</select></label>
-                  <label className="form-label">Category<select name="category" defaultValue=""><option value="">Any category</option>{categoryNames.slice(1).map((category) => <option key={category}>{category}</option>)}</select></label>
-                  <label className="form-label">Job type<select name="employmentType" defaultValue=""><option value="">Any job type</option>{['Full time', 'Contract', 'Seasonal', 'Part time'].map((type) => <option key={type}>{type}</option>)}</select></label>
+                  <label className="form-label">{isArabic ? 'الدولة' : 'Country'}<select name="country" defaultValue=""><option value="">{isArabic ? 'أي دولة' : 'Any country'}</option>{destinations.slice(1).map((country) => <option key={country} value={country}>{localizeCountry(country, isArabic)}</option>)}</select></label>
+                  <label className="form-label">{isArabic ? 'المجال' : 'Category'}<select name="category" defaultValue=""><option value="">{isArabic ? 'أي مجال' : 'Any category'}</option>{categoryNames.slice(1).map((category) => <option key={category} value={category}>{localizeCategory(category, isArabic)}</option>)}</select></label>
+                  <label className="form-label">{isArabic ? 'نوع الوظيفة' : 'Job type'}<select name="employmentType" defaultValue=""><option value="">{isArabic ? 'أي نوع' : 'Any job type'}</option>{['Full time', 'Contract', 'Seasonal', 'Part time'].map((type) => <option key={type} value={type}>{isArabic ? ({ 'Full time': 'دوام كامل', Contract: 'عقد', Seasonal: 'موسمي', 'Part time': 'دوام جزئي' } as Record<string, string>)[type] : type}</option>)}</select></label>
                 </div>
-                <fieldset className="alert-channel-options"><legend>Notify me by</legend>
-                  <label><input type="checkbox" name="channels" value="web" defaultChecked /> GulfBridge website notifications</label>
-                  <label><input type="checkbox" name="channels" value="email" /> Email ({account?.email})</label>
+                <fieldset className="alert-channel-options"><legend>{isArabic ? 'أرسل الإشعار عبر' : 'Notify me by'}</legend>
+                  <label><input type="checkbox" name="channels" value="web" defaultChecked /> {isArabic ? 'إشعارات موقع GulfBridge' : 'GulfBridge website notifications'}</label>
+                  <label><input type="checkbox" name="channels" value="email" /> {isArabic ? 'البريد الإلكتروني' : 'Email'} ({account?.email})</label>
                 </fieldset>
-                <p className="alert-delivery-note">Website alerts are saved to your account. Email alerts are queued securely; email delivery requires the mail service to be configured.</p>
-                <button className="button button-gold" type="submit"><BellRing size={15} /> Save job alert</button>
+                <p className="alert-delivery-note">{isArabic ? 'تُحفظ تنبيهات الموقع في حسابك. تُضاف تنبيهات البريد إلى قائمة انتظار آمنة؛ ويتطلب إرسال البريد إعداد خدمة البريد.' : 'Website alerts are saved to your account. Email alerts are queued securely; email delivery requires the mail service to be configured.'}</p>
+                <button className="button button-gold" type="submit"><BellRing size={15} /> {isArabic ? 'حفظ التنبيه' : 'Save job alert'}</button>
               </form>
             </section>
             <section className="panel notification-panel">
-              <div className="panel-heading"><div><span className="eyebrow">New opportunities</span><h2>Your notifications</h2></div><button className="text-button" type="button" onClick={() => void enableWebNotifications()}><BellRing size={15} /> Enable browser alerts</button></div>
+              <div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'فرص جديدة' : 'New opportunities'}</span><h2>{isArabic ? 'إشعاراتك' : 'Your notifications'}</h2></div><button className="text-button" type="button" onClick={() => void enableWebNotifications()}><BellRing size={15} /> {isArabic ? 'تفعيل إشعارات المتصفح' : 'Enable browser alerts'}</button></div>
               {jobNotifications.length ? <div className="notification-list">{jobNotifications.map((notification) => {
                 const job = jobs.find((item) => item.id === notification.job_id)
                 return <article className={`notification-item ${notification.read_at ? '' : 'unread'}`} key={notification.id}>
@@ -2269,15 +2399,15 @@ function App() {
                   </button>
                   <a className="notification-share" href={`https://wa.me/?text=${encodeURIComponent(`${notification.title} — ${notification.body} ${window.location.origin}`)}`} target="_blank" rel="noopener noreferrer" aria-label="Share job alert on WhatsApp"><MessageCircle size={16} /></a>
                 </article>
-              })}</div> : <p className="queue-empty-note">New jobs that match your saved alerts will appear here.</p>}
+              })}</div> : <p className="queue-empty-note">{isArabic ? 'ستظهر هنا الوظائف الجديدة المطابقة لتنبيهاتك المحفوظة.' : 'New jobs that match your saved alerts will appear here.'}</p>}
             </section>
             <section className="panel saved-alerts-panel">
-              <div className="panel-heading"><div><span className="eyebrow">Your preferences</span><h2>Saved job alerts</h2></div></div>
+              <div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'تفضيلاتك' : 'Your preferences'}</span><h2>{isArabic ? 'التنبيهات المحفوظة' : 'Saved job alerts'}</h2></div></div>
               {jobAlerts.length ? jobAlerts.map((alert) => <article className="saved-alert-row" key={alert.id}>
                 <span className="guide-icon"><BellRing size={17} /></span>
                 <span><strong>{alert.keyword || 'Any matching role'}</strong><small>{[alert.country, alert.category, alert.employment_type].filter(Boolean).join(' · ') || 'All countries and categories'} · {alert.channels.join(', ')}</small></span>
-                <button className="text-button" type="button" onClick={() => void deleteJobAlert(alert.id)}>Delete</button>
-              </article>) : <p className="queue-empty-note">You haven’t saved a job alert yet.</p>}
+                <button className="text-button" type="button" onClick={() => void deleteJobAlert(alert.id)}>{isArabic ? 'حذف' : 'Delete'}</button>
+              </article>) : <p className="queue-empty-note">{isArabic ? 'لم تحفظ أي تنبيه وظيفي بعد.' : 'You haven’t saved a job alert yet.'}</p>}
             </section>
           </div>
         </main>
@@ -2287,15 +2417,15 @@ function App() {
     if (page === 'guides') {
       return (
         <main className="page-shell">
-          <PageHeading eyebrow="Career guides" title="Make your next move with confidence" description="Practical guidance for preparing, applying, and working abroad." onBack={goBack} backLabel={t('back')} />
+          <PageHeading eyebrow={isArabic ? 'أدلة مهنية' : 'Career guides'} title={isArabic ? 'خطوتك التالية بثقة' : 'Make your next move with confidence'} description={isArabic ? 'إرشادات عملية للاستعداد والتقديم والعمل في الخارج.' : 'Practical guidance for preparing, applying, and working abroad.'} onBack={goBack} backLabel={t('back')} />
           <div className="guide-grid">
-            {careerGuides.map(({ icon: Icon, title, description }, index) => (
+            {careerGuides.map(({ icon: Icon, title, titleAr, description, descriptionAr }, index) => (
               <article className="panel guide-card" key={title}>
                 <span className="guide-icon"><Icon size={20} /></span>
                 <span className="guide-number">0{index + 1}</span>
-                <h2>{title}</h2>
-                <p>{description}</p>
-                <button className="text-button" type="button" onClick={() => navigate('help')}>Read safety guidance <ArrowRight size={15} /></button>
+                <h2>{isArabic ? titleAr : title}</h2>
+                <p>{isArabic ? descriptionAr : description}</p>
+                <button className="text-button" type="button" onClick={() => navigate('help')}>{isArabic ? 'اقرأ إرشادات السلامة' : 'Read safety guidance'} <ArrowRight size={15} /></button>
               </article>
             ))}
           </div>
@@ -2353,6 +2483,25 @@ function App() {
                 : 'If you are in immediate danger, contact local emergency services or your country’s embassy.'}
             </p>
           </section>
+          <section className="panel help-verification-panel">
+            <div className="panel-heading"><span className="feature-icon"><BadgeCheck size={20} /></span><div><span className="eyebrow">{isArabic ? 'ماذا تعني شارة المراجعة؟' : 'What the review badge means'}</span><h2>{isArabic ? 'مراجعة GulfBridge' : 'GulfBridge review checks'}</h2></div></div>
+            <p>{isArabic
+              ? 'قبل النشر، يراجع مسؤول مخوّل تسجيل النشاط التجاري والترخيص المناسب وهوية الممثل وتفاصيل عرض العمل. يظهر تاريخ آخر مراجعة على الوظائف التي تحمل شارة المراجعة. هذه مراجعة داخلية وليست اعتمادًا حكوميًا.'
+              : 'Before publication, an authorized reviewer checks business registration, applicable recruitment authorization, the representative’s identity, and the job offer details. Verified listings show the latest review date. This is an internal platform review, not government certification.'}</p>
+            <p>{isArabic
+              ? 'إذا لاحظت طلب رسوم مريبة أو معلومات مضللة، أرسل بلاغًا لفريق السلامة. لا تُرفق جواز سفر أو وثائق هوية.'
+              : 'If you see suspicious fees or misleading details, report them to the safety team. Do not include passports or identity documents.'}</p>
+          </section>
+          <section className="panel scam-report-panel">
+            <div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'ساعدنا في حماية الباحثين عن عمل' : 'Help protect job seekers'}</span><h2>{isArabic ? 'الإبلاغ عن وظيفة مريبة' : 'Report a suspicious listing'}</h2></div></div>
+            {supabase ? <form className="stack-form" onSubmit={(event) => void submitScamReport(event)}>
+              <p>{isArabic ? 'يمكنك الإبلاغ دون تسجيل الدخول. سيطّلع على البلاغ مسؤولو السلامة المخوّلون فقط.' : 'You can report without signing in. Only authorized safety administrators can view reports.'}</p>
+              <label className="form-label">{isArabic ? 'اسم الشركة أو جهة التوظيف (اختياري)' : 'Company or recruiter (optional)'}<input name="employerName" maxLength={180} /></label>
+              <label className="form-label">{isArabic ? 'عنوان الوظيفة (اختياري)' : 'Job title (optional)'}<input name="jobTitle" maxLength={180} /></label>
+              <label className="form-label">{isArabic ? 'ما الذي يبدو مريبًا؟' : 'What seems suspicious?'}<textarea name="details" rows={4} minLength={10} maxLength={4000} required /></label>
+              <button className="button button-gold" type="submit" disabled={isScamReportSubmitting}>{isScamReportSubmitting ? (isArabic ? 'جارٍ الإرسال…' : 'Submitting…') : (isArabic ? 'إرسال البلاغ' : 'Submit report')} <ArrowRight size={15} /></button>
+            </form> : <p>{isArabic ? 'أرسل تفاصيل الوظيفة إلى ' : 'Email the listing details to '}<a href="mailto:gulfbridgeworld@gmail.com?subject=Suspicious%20GulfBridge%20listing">gulfbridgeworld@gmail.com</a>.</p>}
+          </section>
         </main>
       )
     }
@@ -2360,8 +2509,8 @@ function App() {
     if (page === 'map') {
       return (
         <main className="page-shell">
-          <PageHeading eyebrow="Location discovery" title="Find work where it happens" description="Explore reviewed opportunities across Gulf cities, Canada, and the United States." onBack={goBack} backLabel={t('back')} />
-          <MapExplorer jobs={filteredJobs} onSelectJob={setActiveJob} />
+          <PageHeading eyebrow={isArabic ? 'استكشف المواقع' : 'Location discovery'} title={isArabic ? 'اعثر على العمل في موقعه' : 'Find work where it happens'} description={isArabic ? 'استكشف الفرص التي تمت مراجعتها في مدن الخليج وكندا والولايات المتحدة.' : 'Explore reviewed opportunities across Gulf cities, Canada, and the United States.'} onBack={goBack} backLabel={t('back')} />
+          <MapExplorer jobs={filteredJobs} onSelectJob={setActiveJob} isArabic={isArabic} />
         </main>
       )
     }
@@ -2372,18 +2521,18 @@ function App() {
         <main className={`page-shell ${page === 'jobs' ? 'jobs-page-shell' : ''}`}>
           <PageHeading eyebrow={page === 'saved' ? 'Your shortlist' : 'Explore opportunities'} title={page === 'saved' ? 'Saved jobs' : t('jobsHeading')} description={page === 'saved' ? 'Return to opportunities you want to review.' : t('jobsSubheading')} action={page === 'jobs' ? <button className="button button-outline" type="button" onClick={() => navigate('alerts')}><BellRing size={15} /> Create job alert</button> : undefined} onBack={goBack} backLabel={t('back')} />
           {page === 'jobs' && <section className="jobs-category-section" aria-labelledby="jobs-category-heading">
-            <div className="jobs-category-heading"><div><span className="eyebrow">Explore opportunities</span><h2 id="jobs-category-heading">Jobs by Category</h2></div><button className="text-button" type="button" onClick={() => setCategoryFilter('All fields')}>View all <ArrowRight size={15} /></button></div>
+            <div className="jobs-category-heading"><div><span className="eyebrow">{isArabic ? 'استكشف الفرص' : 'Explore opportunities'}</span><h2 id="jobs-category-heading">{isArabic ? 'الوظائف حسب المجال' : 'Jobs by Category'}</h2></div><button className="text-button" type="button" onClick={() => setCategoryFilter('All fields')}>{isArabic ? 'عرض الكل' : 'View all'} <ArrowRight size={15} /></button></div>
             <div className="jobs-category-grid">
               {categoryNames.slice(1).map((category, index) => {
                 const count = jobs.filter((job) => job.category.toLowerCase() === category.toLowerCase()).length
                 return <button className={`jobs-category-card ${categoryFilter === category ? 'active' : ''}`} key={category} type="button" onClick={() => setCategoryFilter(category)}>
                   <span className={`jobs-category-icon tone-${index % 4}`}><BriefcaseBusiness size={19} /></span>
-                  <strong>{category}</strong><small>{count} {count === 1 ? 'role' : 'roles'}</small><ArrowRight className="jobs-category-arrow" size={14} />
+                  <strong>{isArabic ? ({ Healthcare: 'الرعاية الصحية', Driver: 'سائق', Construction: 'البناء', Hospitality: 'الضيافة', Technician: 'فني', Logistics: 'الخدمات اللوجستية', 'Customer service': 'خدمة العملاء' } as Record<string, string>)[category] : category}</strong><small>{count} {isArabic ? 'وظائف' : count === 1 ? 'role' : 'roles'}</small><ArrowRight className="jobs-category-arrow" size={14} />
                 </button>
               })}
             </div>
           </section>}
-          <FilterBar
+          {page === 'jobs' && <FilterBar
             destinations={destinations}
             categories={categoryNames}
             destination={destinationFilter}
@@ -2394,11 +2543,18 @@ function App() {
             onVerifiedOnly={setVerifiedOnly}
             onSearch={setJobSearch}
             search={jobSearch}
-          />
-          <p className="result-count">{listing.length} {listing.length === 1 ? 'opportunity' : 'opportunities'}</p>
-          {listing.length ? <div className="job-grid">{listing.map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} isExample={isExampleListing} />)}</div> : page === 'jobs' && jobs.length === 0
-            ? <EmptyState title="No new opportunities just yet" description="New listings appear here after review. Check back soon or get in touch with our team." action="Help & safety" onAction={() => navigate('help')} />
-            : <EmptyState title="No jobs match these filters" description="Try another destination, category, or search term." action="Clear filters" onAction={() => { setDestinationFilter('All destinations'); setCategoryFilter('All fields'); setVerifiedOnly(false); setJobSearch('') }} />}
+            isArabic={isArabic}
+          />}
+          {page === 'saved' && (savedJobsLoading || jobsLoading)
+            ? <p className="queue-empty-note" role="status">{isArabic ? 'جارٍ تحميل وظائفك المحفوظة…' : 'Loading your saved jobs…'}</p>
+            : <>
+          <p className="result-count">{listing.length} {page === 'saved' ? (isArabic ? 'وظائف محفوظة' : 'saved jobs') : (listing.length === 1 ? (isArabic ? 'فرصة' : 'opportunity') : (isArabic ? 'فرص' : 'opportunities'))}</p>
+          {listing.length ? <div className="job-grid">{listing.map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} isExample={isExampleListing} isArabic={isArabic} />)}</div> : page === 'jobs' && (jobsLoading || jobs.length === 0)
+            ? <EmptyState title={isArabic ? 'لا توجد فرص جديدة حاليًا' : 'No new opportunities just yet'} description={isArabic ? 'ستظهر الوظائف بعد مراجعتها. تواصل مع فريقنا أو عُد لاحقًا.' : 'New listings appear here after review. Check back soon or get in touch with our team.'} action={isArabic ? 'المساعدة والسلامة' : 'Help & safety'} onAction={() => navigate('help')} />
+            : page === 'saved'
+              ? <EmptyState title={isArabic ? 'لا توجد وظائف محفوظة بعد' : 'No saved jobs yet'} description={isArabic ? 'احفظ الوظائف التي تهمك لتعود إليها هنا.' : 'Save opportunities that interest you and they will appear here.'} action={isArabic ? 'تصفح الوظائف' : 'Browse jobs'} onAction={() => navigate('jobs')} />
+              : <EmptyState title={isArabic ? 'لا توجد وظائف تطابق عوامل التصفية' : 'No jobs match these filters'} description={isArabic ? 'جرّب وجهة أو مجالًا أو كلمة بحث أخرى.' : 'Try another destination, category, or search term.'} action={isArabic ? 'مسح عوامل التصفية' : 'Clear filters'} onAction={() => { setDestinationFilter('All destinations'); setCategoryFilter('All fields'); setVerifiedOnly(false); setJobSearch('') }} />}
+            </>}
         </main>
       )
     }
@@ -2406,11 +2562,11 @@ function App() {
     if (page === 'applications') {
       return (
         <main className="page-shell">
-          <PageHeading eyebrow="Your journey" title={t('trackerTitle')} description="Employer updates are shown here. Admin retains final oversight of application status." onBack={goBack} backLabel={t('back')} />
-          {applications.length === 0 ? <EmptyState title="Your next opportunity starts here" description={t('emptyApplications')} action="Browse jobs" onAction={() => navigate('jobs')} /> : (
-            <div className="application-list">{applications.map((application) => <ApplicationCard key={application.id} application={application} />)}</div>
+          <PageHeading eyebrow={isArabic ? 'رحلتك' : 'Your journey'} title={t('trackerTitle')} description={isArabic ? 'تظهر هنا تحديثات صاحب العمل. وتحتفظ الإدارة بالإشراف النهائي على حالة الطلب.' : 'Employer updates are shown here. Admin retains final oversight of application status.'} onBack={goBack} backLabel={t('back')} />
+          {applications.length === 0 ? <EmptyState title={isArabic ? 'تبدأ فرصتك التالية من هنا' : 'Your next opportunity starts here'} description={t('emptyApplications')} action={isArabic ? 'تصفح الوظائف' : 'Browse jobs'} onAction={() => navigate('jobs')} /> : (
+            <div className="application-list">{applications.map((application) => <ApplicationCard key={application.id} application={application} isArabic={isArabic} />)}</div>
           )}
-          {applications.length > 0 && <div className="notice-card"><ShieldCheck size={18} /><span>Visa and travel stages reflect reported progress, not an official immigration decision.</span></div>}
+          {applications.length > 0 && <div className="notice-card"><ShieldCheck size={18} /><span>{isArabic ? 'تعكس مراحل التأشيرة والسفر التقدم المُبلّغ عنه، وليست قرارًا رسميًا للهجرة.' : 'Visa and travel stages reflect reported progress, not an official immigration decision.'}</span></div>}
         </main>
       )
     }
@@ -2422,40 +2578,40 @@ function App() {
       const currentMessages = inboxMessagesConversationId === activeConversationId ? inboxMessages : []
       return (
         <main className="page-shell">
-          <PageHeading eyebrow={isAdmin ? 'Admin workspace' : 'Your account'} title="Messages" description={isAdmin ? 'Reply to members and follow up on their applications in one private inbox.' : 'Contact the GulfBridge team and follow up on your applications.'} onBack={goBack} backLabel={t('back')} />
+          <PageHeading eyebrow={isArabic ? (isAdmin ? 'مساحة الإدارة' : 'حسابك') : (isAdmin ? 'Admin workspace' : 'Your account')} title={isArabic ? 'الرسائل' : 'Messages'} description={isArabic ? (isAdmin ? 'تواصل مع الأعضاء وتابع طلباتهم في صندوق وارد خاص.' : 'تواصل مع فريق GulfBridge وتابع طلباتك.') : (isAdmin ? 'Reply to members and follow up on their applications in one private inbox.' : 'Contact the GulfBridge team and follow up on your applications.')} onBack={goBack} backLabel={t('back')} />
           <section className={`inbox-layout ${isAdmin ? 'inbox-admin' : ''}`}>
             {isAdmin && <aside className="panel inbox-contacts">
-              <div className="inbox-contact-heading"><strong>Conversations</strong><span>{inboxConversations.length}</span></div>
-              <label className="form-label">Start a conversation
+              <div className="inbox-contact-heading"><strong>{isArabic ? 'المحادثات' : 'Conversations'}</strong><span>{inboxConversations.length}</span></div>
+              <label className="form-label">{isArabic ? 'بدء محادثة' : 'Start a conversation'}
                 <select value={inboxTargetUserId} onChange={(event) => {
                   const userId = event.target.value
                   setInboxTargetUserId(userId)
                   setActiveConversationId(inboxConversations.find((conversation) => conversation.user_id === userId)?.id || '')
                 }}>
-                  <option value="">Select a registered user</option>
-                  {adminProfiles.filter((profile) => !profile.roles.includes('admin')).map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || 'GulfBridge member'}{profile.email ? ` · ${profile.email}` : ''}</option>)}
+                  <option value="">{isArabic ? 'اختر مستخدمًا مسجلًا' : 'Select a registered user'}</option>
+                  {adminProfiles.filter((profile) => !profile.roles.includes('admin')).map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || (isArabic ? 'عضو GulfBridge' : 'GulfBridge member')}{profile.email ? ` · ${profile.email}` : ''}</option>)}
                 </select>
               </label>
               {inboxConversations.map((conversation) => <button className={`inbox-contact ${activeConversationId === conversation.id ? 'active' : ''}`} key={conversation.id} type="button" onClick={() => { setActiveConversationId(conversation.id); setInboxTargetUserId(conversation.user_id) }}>
-                <span className="company-avatar">{getInitials(conversation.full_name || 'GB')}</span><span><strong>{conversation.full_name}</strong><small>{conversation.email || 'GulfBridge member'}</small></span>{unreadMessagesByConversation[conversation.id] > 0 && <span className="inbox-unread-count">{unreadMessagesByConversation[conversation.id]}</span>}
+                <span className="company-avatar">{getInitials(conversation.full_name || 'GB')}</span><span><strong>{conversation.full_name}</strong><small>{conversation.email || (isArabic ? 'عضو GulfBridge' : 'GulfBridge member')}</small></span>{unreadMessagesByConversation[conversation.id] > 0 && <span className="inbox-unread-count">{unreadMessagesByConversation[conversation.id]}</span>}
               </button>)}
-              {!inboxConversations.length && <p className="queue-empty-note">No conversations yet. Choose a registered user above to send the first message.</p>}
+              {!inboxConversations.length && <p className="queue-empty-note">{isArabic ? 'لا توجد محادثات بعد. اختر مستخدمًا مسجلًا أعلاه لبدء محادثة.' : 'No conversations yet. Choose a registered user above to send the first message.'}</p>}
             </aside>}
             <section className="panel inbox-thread">
               <div className="inbox-thread-heading">
                 <span className="company-avatar"><MessageSquare size={18} /></span>
-                <div><strong>{isAdmin ? activeConversation?.full_name || targetUser?.full_name || 'Select a member' : 'GulfBridge support'}</strong><small>{isAdmin ? activeConversation?.email || targetUser?.email || 'Private member conversation' : 'Private conversation with the GulfBridge team'}</small></div>
-                <button className="inbox-alert-setting" type="button" onClick={() => void enableWebNotifications()}><BellRing size={14} />{typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 'Desktop alerts on' : 'Enable desktop alerts'}</button>
+                <div><strong>{isAdmin ? activeConversation?.full_name || targetUser?.full_name || (isArabic ? 'اختر عضوًا' : 'Select a member') : (isArabic ? 'دعم GulfBridge' : 'GulfBridge support')}</strong><small>{isAdmin ? activeConversation?.email || targetUser?.email || (isArabic ? 'محادثة خاصة مع عضو' : 'Private member conversation') : (isArabic ? 'محادثة خاصة مع فريق GulfBridge' : 'Private conversation with the GulfBridge team')}</small></div>
+                <button className="inbox-alert-setting" type="button" onClick={() => void enableWebNotifications()}><BellRing size={14} />{typeof Notification !== 'undefined' && Notification.permission === 'granted' ? (isArabic ? 'إشعارات سطح المكتب مفعّلة' : 'Desktop alerts on') : (isArabic ? 'تفعيل إشعارات سطح المكتب' : 'Enable desktop alerts')}</button>
               </div>
               <div className="inbox-message-list" aria-live="polite">
-                {inboxLoading ? <p className="queue-empty-note">Loading conversations…</p> : currentMessages.length ? currentMessages.map((message) => <article className={`inbox-message ${message.sender_id === account?.id ? 'mine' : ''}`} key={message.id}><p>{message.body}</p><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleString()}</time></article>) : <div className="inbox-empty"><MessageSquare size={25} /><strong>{isAdmin ? activeConversationId ? 'No messages yet' : 'Start a private conversation' : 'How can we help?'}</strong><p>{isAdmin ? 'Send a message to discuss an application or answer a member’s question.' : 'Send a message to the GulfBridge team. Replies will appear here.'}</p></div>}
+                {inboxLoading ? <p className="queue-empty-note">{isArabic ? 'جارٍ تحميل المحادثات…' : 'Loading conversations…'}</p> : currentMessages.length ? currentMessages.map((message) => <article className={`inbox-message ${message.sender_id === account?.id ? 'mine' : ''}`} key={message.id}><p>{message.body}</p><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleString(isArabic ? 'ar' : undefined)}</time></article>) : <div className="inbox-empty"><MessageSquare size={25} /><strong>{isAdmin ? activeConversationId ? (isArabic ? 'لا توجد رسائل بعد' : 'No messages yet') : (isArabic ? 'ابدأ محادثة خاصة' : 'Start a private conversation') : (isArabic ? 'كيف يمكننا مساعدتك؟' : 'How can we help?')}</strong><p>{isAdmin ? (isArabic ? 'أرسل رسالة لمناقشة طلب أو الإجابة عن سؤال أحد الأعضاء.' : 'Send a message to discuss an application or answer a member’s question.') : (isArabic ? 'أرسل رسالة إلى فريق GulfBridge. ستظهر الردود هنا.' : 'Send a message to the GulfBridge team. Replies will appear here.')}</p></div>}
               </div>
               <form className="inbox-compose" onSubmit={(event) => void sendInboxMessage(event)}>
-                <label className="sr-only" htmlFor="inbox-message">Write a message</label>
-                <textarea id="inbox-message" name="message" rows={2} maxLength={4000} placeholder="Write a message…" required disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)} />
-                <button className="button button-gold" type="submit" disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)}><Send size={15} /> Send</button>
+                <label className="sr-only" htmlFor="inbox-message">{isArabic ? 'اكتب رسالة' : 'Write a message'}</label>
+                <textarea id="inbox-message" name="message" rows={2} maxLength={4000} placeholder={isArabic ? 'اكتب رسالة…' : 'Write a message…'} required disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)} />
+                <button className="button button-gold" type="submit" disabled={!supabase || (isAdmin && !activeConversationId && !inboxTargetUserId)}><Send size={15} /> {isArabic ? 'إرسال' : 'Send'}</button>
               </form>
-              <p className="inbox-privacy"><LockKeyhole size={13} /> {!supabase ? 'Connect Supabase to enable secure messaging.' : 'Messages are private to the member and GulfBridge administrators.'}</p>
+              <p className="inbox-privacy"><LockKeyhole size={13} /> {!supabase ? (isArabic ? 'اربط Supabase لتفعيل المراسلة الآمنة.' : 'Connect Supabase to enable secure messaging.') : (isArabic ? 'الرسائل خاصة بالعضو ومسؤولي GulfBridge.' : 'Messages are private to the member and GulfBridge administrators.')}</p>
             </section>
           </section>
         </main>
@@ -2465,32 +2621,33 @@ function App() {
     if (page === 'profile') {
       return (
         <main className="page-shell">
-          <PageHeading eyebrow="Account" title={t('profileTitle')} description={t('profileDescription')} onBack={goBack} backLabel={t('back')} />
-          {!account ? <EmptyState title="Sign in to view your account" description="Your profile and downloads are private to you." action="Sign in" onAction={() => setAuthOpen(true)} /> : (
+          <PageHeading eyebrow={isArabic ? 'الحساب' : 'Account'} title={t('profileTitle')} description={t('profileDescription')} onBack={goBack} backLabel={t('back')} />
+          {!account ? <EmptyState title={isArabic ? 'سجّل الدخول لعرض حسابك' : 'Sign in to view your account'} description={isArabic ? 'ملفك الشخصي وملفاتك خاصة بك.' : 'Your profile and downloads are private to you.'} action={t('signIn')} onAction={() => setAuthOpen(true)} /> : (
             <div className="profile-layout">
               <section className="profile-card panel">
                 <div className="profile-avatar">{getInitials(account.name)}</div>
-                <h2>{account.name}</h2><p>{account.headline || 'Job seeker · GulfBridge member'}</p>
+                <h2>{account.name}</h2><p>{account.headline || (isArabic ? 'باحث عن عمل · عضو في GulfBridge' : 'Job seeker · GulfBridge member')}</p>
                 <button className="button button-outline" onClick={openProfileEditor} type="button"><UserRound size={16} /> {t('editProfile')}</button>
                 <div className="profile-divider" />
-                <InfoRow icon={<Globe2 size={16} />} label="Account roles" value={account.roles.map((role) => role === 'seeker' ? 'Job seeker' : role === 'recruiter' ? 'Recruiter' : 'Admin').join(' · ')} />
-                <InfoRow icon={<LockKeyhole size={16} />} label="Documents" value="Added securely per application" />
+                <InfoRow icon={<Globe2 size={16} />} label={isArabic ? 'أدوار الحساب' : 'Account roles'} value={account.roles.map((role) => role === 'seeker' ? (isArabic ? 'باحث عن عمل' : 'Job seeker') : role === 'recruiter' ? (isArabic ? 'موظف' : 'Recruiter') : (isArabic ? 'مسؤول' : 'Admin')).join(' · ')} />
+                <InfoRow icon={<LockKeyhole size={16} />} label={isArabic ? 'المستندات' : 'Documents'} value={isArabic ? 'تُضاف بأمان لكل طلب' : 'Added securely per application'} />
               </section>
               <section className="panel profile-details">
-                <div className="panel-heading"><div><span className="eyebrow">Personal information</span><h2>Profile details</h2></div><button className="text-button" onClick={openProfileEditor} type="button">Edit details <ArrowRight size={15} /></button></div>
+                <div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'المعلومات الشخصية' : 'Personal information'}</span><h2>{isArabic ? 'تفاصيل الملف الشخصي' : 'Profile details'}</h2></div><button className="text-button" onClick={openProfileEditor} type="button">{isArabic ? 'تعديل التفاصيل' : 'Edit details'} <ArrowRight size={15} /></button></div>
+                <p className="profile-privacy-note">{isArabic ? 'هذه التفاصيل خاصة بحسابك ولا يطّلع عليها إلا مسؤولو GulfBridge المخوّلون. لا تشارك جلسة تسجيل الدخول.' : 'These details are private to your account and authorized GulfBridge administrators. Do not share your signed-in session.'}</p>
                 <InfoRow icon={<UserRound size={16} />} label={t('name')} value={account.name} />
                 <InfoRow icon={<MessageCircle size={16} />} label={t('email')} value={account.email} />
-                <InfoRow icon={<MessageCircle size={16} />} label={t('phone')} value={account.phone || 'Add your phone number'} />
-                <InfoRow icon={<MapPin size={16} />} label={t('location')} value={account.location || 'Add your location'} />
-                <InfoRow icon={<BriefcaseBusiness size={16} />} label={t('skills')} value={account.skills || 'Add your skills'} />
+                <InfoRow icon={<MessageCircle size={16} />} label={t('phone')} value={account.phone || (isArabic ? 'أضف رقم هاتفك' : 'Add your phone number')} />
+                <InfoRow icon={<MapPin size={16} />} label={t('location')} value={account.location || (isArabic ? 'أضف موقعك' : 'Add your location')} />
+                <InfoRow icon={<BriefcaseBusiness size={16} />} label={t('skills')} value={account.skills || (isArabic ? 'أضف مهاراتك' : 'Add your skills')} />
               </section>
               <section className="panel download-panel">
                 <div className="feature-icon"><ArrowDownToLine size={21} /></div>
-                <div className="document-list-wrap"><h3>Your application documents</h3><p>Private files remain attached to their application. No automatic expiry is applied.</p>
-                  {profileDocuments.length ? profileDocuments.map((record) => <div className="private-document-row" key={record.id}><span><FileText size={14} />{record.original_filename}<small>{record.document_kind.replace('_', ' ')} · {new Date(record.created_at).toLocaleDateString()}</small></span><button className="text-button" type="button" onClick={() => void downloadProfileDocument(record)}><ArrowDownToLine size={14} /> Download</button></div>) : <small className="no-documents">{isSupabaseConfigured ? 'No application documents found on this account.' : 'Documents appear here after Supabase is connected and an application is submitted.'}</small>}
+                <div className="document-list-wrap"><h3>{isArabic ? 'مستندات طلبك' : 'Your application documents'}</h3><p>{isArabic ? 'تبقى الملفات الخاصة مرتبطة بطلبها. لا يوجد انتهاء تلقائي حاليًا.' : 'Private files remain attached to their application. No automatic expiry is applied.'}</p>
+                  {profileDocuments.length ? profileDocuments.map((record) => <div className="private-document-row" key={record.id}><span><FileText size={14} />{record.original_filename}<small>{record.document_kind.replace('_', ' ')} · {new Date(record.created_at).toLocaleDateString(isArabic ? 'ar' : undefined)}</small></span><button className="text-button" type="button" onClick={() => void downloadProfileDocument(record)}><ArrowDownToLine size={14} /> {isArabic ? 'تنزيل' : 'Download'}</button></div>) : <small className="no-documents">{isSupabaseConfigured ? (isArabic ? 'لم يُعثر على مستندات طلبات لهذا الحساب.' : 'No application documents found on this account.') : (isArabic ? 'ستظهر المستندات بعد ربط Supabase وإرسال طلب.' : 'Documents appear here after Supabase is connected and an application is submitted.')}</small>}
                 </div>
               </section>
-              <section className="panel danger-zone"><div><h3>Delete account permanently</h3><p>This removes your account and its private documents, subject to applicable legal retention requirements. This cannot be undone.</p></div><button className="button button-danger" type="button" onClick={() => setDeleteConfirmOpen(true)}>Delete account</button></section>
+              <section className="panel danger-zone"><div><h3>{isArabic ? 'حذف الحساب نهائيًا' : 'Delete account permanently'}</h3><p>{isArabic ? 'سيؤدي ذلك إلى حذف حسابك ومستنداتك الخاصة، وفقًا لمتطلبات الاحتفاظ القانونية. لا يمكن التراجع عن ذلك.' : 'This removes your account and its private documents, subject to applicable legal retention requirements. This cannot be undone.'}</p></div><button className="button button-danger" type="button" onClick={() => setDeleteConfirmOpen(true)}>{isArabic ? 'حذف الحساب' : 'Delete account'}</button></section>
             </div>
           )}
         </main>
@@ -2500,18 +2657,18 @@ function App() {
     if (page === 'recruiter') {
       return (
         <main className="page-shell">
-          <PageHeading eyebrow="Recruiter workspace" title="Submit your agency and job" description="Share your official details and job offer together. Admin reviews every submission before it can be paid for and published." action={<button className="button button-outline" type="button" onClick={() => handleRoleSwitch('seeker')}>Switch to seeker view</button>} onBack={goBack} backLabel={t('back')} />
-          <RecruiterForm onSubmit={submitRecruiterListing} isSubmitting={isSubmitting} />
-          <section className="panel premium-request-panel"><div><span className="eyebrow">Premium company plan</span><h2>One month of premium visibility</h2><p>Unlimited active job listings during the paid month; each post is still reviewed. Includes homepage logo placement and a direct company WhatsApp contact button on approved listings.</p></div><form onSubmit={requestPremiumPlan}><label className="form-label">Company market<select name="employerMarket" defaultValue="kenyan_agency"><option value="kenyan_agency">Kenyan agency · KSh 20,000 / month</option><option value="gulf_employer">Gulf employer · SAR 578 / month</option></select></label><button className="button button-gold" type="submit">Request premium plan <ArrowRight size={15} /></button></form></section>
+          <PageHeading eyebrow={isArabic ? 'مساحة أصحاب العمل' : 'Recruiter workspace'} title={isArabic ? 'أرسل بيانات وكالتك والوظيفة' : 'Submit your agency and job'} description={isArabic ? 'أرسل بياناتك الرسمية وعرض العمل للمراجعة. لن يُتاح الدفع والنشر قبل المراجعة الإدارية.' : 'Share your official details and job offer together. Admin reviews every submission before it can be paid for and published.'} action={<button className="button button-outline" type="button" onClick={() => handleRoleSwitch('seeker')}>{isArabic ? 'التبديل إلى الباحث عن عمل' : 'Switch to seeker view'}</button>} onBack={goBack} backLabel={t('back')} />
+          <RecruiterForm onSubmit={submitRecruiterListing} isSubmitting={isSubmitting} isArabic={isArabic} />
+          <section className="panel premium-request-panel"><div><span className="eyebrow">{isArabic ? 'خطة الشركة المميزة' : 'Premium company plan'}</span><h2>{isArabic ? 'ظهور مميز لمدة شهر' : 'One month of premium visibility'}</h2><p>{isArabic ? 'إعلانات وظائف نشطة غير محدودة خلال الشهر المدفوع؛ وتظل كل وظيفة خاضعة للمراجعة. تشمل ظهور الشعار في الصفحة الرئيسية وزر واتساب مباشر للشركة في الإعلانات المعتمدة.' : 'Unlimited active job listings during the paid month; each post is still reviewed. Includes homepage logo placement and a direct company WhatsApp contact button on approved listings.'}</p></div><form onSubmit={requestPremiumPlan}><label className="form-label">{isArabic ? 'سوق الشركة' : 'Company market'}<select name="employerMarket" defaultValue="kenyan_agency"><option value="kenyan_agency">{isArabic ? 'وكالة كينية · 20,000 شلن شهريًا' : 'Kenyan agency · KSh 20,000 / month'}</option><option value="gulf_employer">{isArabic ? 'صاحب عمل خليجي · 578 ريالًا شهريًا' : 'Gulf employer · SAR 578 / month'}</option></select></label><button className="button button-gold" type="submit">{isArabic ? 'طلب الخطة المميزة' : 'Request premium plan'} <ArrowRight size={15} /></button></form></section>
           <section className="pricing-row">
-            <PriceCard title="Kenyan agency listing" price="KSh 5,000" note="One approved listing · 30 days" />
-            <PriceCard title="Gulf employer listing" price="SAR 289" note="One approved listing · 30 days" />
-            <PriceCard title="Premium company" price="KSh 20,000 / SAR 578" note="One month · unlimited active listings · homepage logo · direct company WhatsApp contact" />
+            <PriceCard title={isArabic ? 'إعلان وكالة كينية' : 'Kenyan agency listing'} price="KSh 5,000" note={isArabic ? 'إعلان واحد معتمد · 30 يومًا' : 'One approved listing · 30 days'} />
+            <PriceCard title={isArabic ? 'إعلان صاحب عمل خليجي' : 'Gulf employer listing'} price="SAR 289" note={isArabic ? 'إعلان واحد معتمد · 30 يومًا' : 'One approved listing · 30 days'} />
+            <PriceCard title={isArabic ? 'شركة مميزة' : 'Premium company'} price="KSh 20,000 / SAR 578" note={isArabic ? 'شهر واحد · إعلانات نشطة غير محدودة · شعار في الصفحة الرئيسية · تواصل مباشر عبر واتساب' : 'One month · unlimited active listings · homepage logo · direct company WhatsApp contact'} />
           </section>
-          <p className="fine-print">Premium posts use the active one-month company plan and do not incur a per-job fee. Premium does not bypass admin review. WhatsApp is direct company contact only, not an application channel.</p>
-          {premiumRequests.length > 0 && <section className="panel recruiter-submissions"><div className="panel-heading"><div><span className="eyebrow">Company plan</span><h2>Premium payment status</h2></div></div>{premiumRequests.map((item) => <PremiumRequestCard key={item.id} request={item} onSubmit={submitPremiumPayment} />)}</section>}
-          {mySubmissions.length > 0 && <section className="panel recruiter-submissions"><div className="panel-heading"><div><span className="eyebrow">Your submissions</span><h2>Job review and payment status</h2></div></div>{mySubmissions.map((item) => <RecruiterSubmissionCard key={item.id} submission={item} onPayment={submitListingPayment} />)}</section>}
-          {employerApplications.length > 0 && <section className="panel recruiter-submissions"><div className="panel-heading"><div><span className="eyebrow">Applications</span><h2>People who applied to your jobs</h2></div></div>{employerApplications.map((item) => <EmployerApplicationCard key={item.application_id} application={item} onUpdate={updateApplicationStatus} />)}</section>}
+          <p className="fine-print">{isArabic ? 'تستخدم الإعلانات المميزة خطة الشركة النشطة لمدة شهر ولا تُفرض رسوم لكل وظيفة. لا تتجاوز الخطة مراجعة الإدارة. واتساب للتواصل المباشر مع الشركة فقط وليس للتقديم.' : 'Premium posts use the active one-month company plan and do not incur a per-job fee. Premium does not bypass admin review. WhatsApp is direct company contact only, not an application channel.'}</p>
+          {premiumRequests.length > 0 && <section className="panel recruiter-submissions"><div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'خطة الشركة' : 'Company plan'}</span><h2>{isArabic ? 'حالة دفع الخطة المميزة' : 'Premium payment status'}</h2></div></div>{premiumRequests.map((item) => <PremiumRequestCard key={item.id} request={item} onSubmit={submitPremiumPayment} isArabic={isArabic} />)}</section>}
+          {mySubmissions.length > 0 && <section className="panel recruiter-submissions"><div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'إعلاناتك' : 'Your submissions'}</span><h2>{isArabic ? 'مراجعة الوظيفة وحالة الدفع' : 'Job review and payment status'}</h2></div></div>{mySubmissions.map((item) => <RecruiterSubmissionCard key={item.id} submission={item} onPayment={submitListingPayment} isArabic={isArabic} />)}</section>}
+          {employerApplications.length > 0 && <section className="panel recruiter-submissions"><div className="panel-heading"><div><span className="eyebrow">{isArabic ? 'الطلبات' : 'Applications'}</span><h2>{isArabic ? 'المتقدمون إلى وظائفك' : 'People who applied to your jobs'}</h2></div></div>{employerApplications.map((item) => <EmployerApplicationCard key={item.application_id} application={item} onUpdate={updateApplicationStatus} isArabic={isArabic} />)}</section>}
         </main>
       )
     }
@@ -2653,7 +2810,7 @@ function App() {
         <main>
           <section className="hero-section">
             <img className="hero-photo" src={airportHeroPhoto} alt="Passenger airplane at an international airport" decoding="async" />
-            <div className="hero-photo-note"><span className="hero-photo-note-icon"><Globe2 size={17} /></span><span><strong>Good work can take you further</strong><small>Explore opportunities across 12 destinations</small></span></div>
+            <div className="hero-photo-note"><span className="hero-photo-note-icon"><Globe2 size={17} /></span><span><strong>{isArabic ? 'العمل الجيد يفتح آفاقًا أوسع' : 'Good work can take you further'}</strong><small>{isArabic ? 'استكشف الفرص في 12 وجهة' : 'Explore opportunities across 12 destinations'}</small></span></div>
             <div className="hero-content">
               <span className="eyebrow hero-eyebrow"><span className="eyebrow-dot" /> {t('heroEyebrow')}</span>
               <h1>{t('heroTitleA')}<br /><span>{t('heroTitleB')}</span></h1>
@@ -2665,21 +2822,21 @@ function App() {
                 <button className="button button-gold" type="submit">{t('search')} <ArrowRight size={16} /></button>
               </form>
               <form className="ai-box" onSubmit={handleAIMatch}>
-                <div className="ai-label"><span className="ai-spark"><Sparkles size={17} /></span><span>{t('aiPrompt')} <small>Keyword matching</small></span></div>
+                <div className="ai-label"><span className="ai-spark"><Sparkles size={17} /></span><span>{t('aiPrompt')} <small>{isArabic ? 'مطابقة الكلمات المفتاحية' : 'Keyword matching'}</small></span></div>
                 <div className="ai-input-row"><label className="sr-only" htmlFor="ai-job-prompt">{t('aiPlaceholder')}</label><input id="ai-job-prompt" value={aiPrompt} onChange={(event) => setAiPrompt(event.target.value)} placeholder={t('aiPlaceholder')} /><button type="submit" className="button button-glass"><Sparkles size={16} /> {t('match')}</button></div>
-                <p className="ai-disclaimer">Matches your search with listing details. Your identity documents are never sent.</p>
+                <p className="ai-disclaimer">{isArabic ? 'تتم مطابقة بحثك مع تفاصيل الوظائف. لا تُرسل وثائق هويتك.' : 'Matches your search with listing details. Your identity documents are never sent.'}</p>
               </form>
-              <div className="destination-chips" aria-label="Popular destinations">
-                {destinations.slice(1).map((destination) => <button key={destination} className={`destination-chip ${destinationFilter === destination ? 'selected' : ''}`} onClick={() => { setDestinationFilter(destination); navigate('jobs') }} type="button"><span className="country-monogram">{countries[destination]}</span>{destination}</button>)}
+              <div className="destination-chips" aria-label={isArabic ? 'وجهات شائعة' : 'Popular destinations'}>
+                {destinations.slice(1).map((destination) => <button key={destination} className={`destination-chip ${destinationFilter === destination ? 'selected' : ''}`} onClick={() => { setDestinationFilter(destination); navigate('jobs') }} type="button"><span className="country-monogram">{countries[destination]}</span>{localizeCountry(destination, isArabic)}</button>)}
               </div>
-              <div className="hero-proof"><span><ShieldCheck size={16} /> Admin-reviewed listings</span><span><LockKeyhole size={15} /> Private applications</span><span><Globe2 size={15} /> English & Arabic</span></div>
+              <div className="hero-proof"><span><ShieldCheck size={16} /> {isArabic ? 'وظائف راجعتها الإدارة' : 'Admin-reviewed listings'}</span><span><LockKeyhole size={15} /> {isArabic ? 'طلبات خاصة' : 'Private applications'}</span><span><Globe2 size={15} /> {isArabic ? 'الإنجليزية والعربية' : 'English & Arabic'}</span></div>
             </div>
             <div className="hero-decoration hero-decoration-one" /><div className="hero-decoration hero-decoration-two" />
           </section>
 
           <section className="home-section country-section">
             <div className="country-feature-banner">
-              <div><span className="eyebrow"><Globe2 size={14} /> Explore destinations</span><h2>Jobs by country</h2><p>Find opportunities in your preferred destination.</p></div>
+              <div><span className="eyebrow"><Globe2 size={14} /> {isArabic ? 'استكشف الوجهات' : 'Explore destinations'}</span><h2>{isArabic ? 'وظائف حسب الدولة' : 'Jobs by country'}</h2><p>{isArabic ? 'ابحث عن فرص في وجهتك المفضلة.' : 'Find opportunities in your preferred destination.'}</p></div>
               <Plane className="country-feature-plane" size={54} strokeWidth={1.4} aria-hidden="true" />
             </div>
             <div className="country-card-grid">
@@ -2695,49 +2852,49 @@ function App() {
 
           <section className="home-section jobs-section" id="featured-jobs">
             <div className="section-heading">
-              <div><span className="eyebrow">Thoughtfully reviewed</span><h2>{t('jobsHeading')}</h2><p>{t('jobsSubheading')}</p></div>
+              <div><span className="eyebrow">{isArabic ? 'تمت مراجعتها بعناية' : 'Thoughtfully reviewed'}</span><h2>{t('jobsHeading')}</h2><p>{t('jobsSubheading')}</p></div>
               <button className="text-button" onClick={() => navigate('jobs')} type="button">{t('seeAll')} <ArrowRight size={16} /></button>
             </div>
             <div className="featured-layout">
               {jobs.length
-                ? <div className="job-grid">{jobs.slice(0, 3).map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} isExample={isExampleListing} />)}</div>
-                : <div className="panel featured-empty-state"><span className="feature-icon"><BriefcaseBusiness size={20} /></span><h3>No new opportunities just yet</h3><p>New listings appear here after review. Check back soon or get in touch with our team.</p><button className="button button-outline" onClick={() => navigate('help')} type="button">Help & safety <ArrowRight size={15} /></button></div>}
+                ? <div className="job-grid">{jobs.slice(0, 3).map((job, index) => <JobCard key={job.id} job={job} index={index} isSaved={savedIds.includes(job.id)} onOpen={setActiveJob} onSave={toggleSave} t={t} toKes={toKes} isExample={isExampleListing} isArabic={isArabic} />)}</div>
+                : <div className="panel featured-empty-state"><span className="feature-icon"><BriefcaseBusiness size={20} /></span><h3>{isArabic ? 'لا توجد فرص جديدة حاليًا' : 'No new opportunities just yet'}</h3><p>{isArabic ? 'ستظهر الوظائف بعد مراجعتها. تواصل مع فريقنا أو عُد لاحقًا.' : 'New listings appear here after review. Check back soon or get in touch with our team.'}</p><button className="button button-outline" onClick={() => navigate('help')} type="button">{isArabic ? 'المساعدة والسلامة' : 'Help & safety'} <ArrowRight size={15} /></button></div>}
               <aside className="trust-card">
                 <div className="trust-icon"><ShieldCheck size={26} /></div>
-                <span className="eyebrow">The GulfBridge standard</span>
+                <span className="eyebrow">{isArabic ? 'معايير GulfBridge' : 'The GulfBridge standard'}</span>
                 <h3>{t('trustTitle')}</h3>
                 <p>{t('trustDescription')}</p>
-                <button className="button button-outline" onClick={() => navigate('help')} type="button">How verification works <ArrowUpRight size={15} /></button>
+                <button className="button button-outline" onClick={() => navigate('help')} type="button">{isArabic ? 'كيف تتم المراجعة' : 'How verification works'} <ArrowUpRight size={15} /></button>
               </aside>
             </div>
-            <p className="salary-note"><CircleHelp size={15} /> {t('salaryNote')} {rateDate ? `Rate data updated ${new Date(rateDate).toLocaleDateString()}.` : 'KSh estimates appear when a public rate is available.'}</p>
+            <p className="salary-note"><CircleHelp size={15} /> {t('salaryNote')} {rateDate ? `${isArabic ? 'آخر تحديث لسعر الصرف' : 'Rate data updated'} ${new Date(rateDate).toLocaleDateString(isArabic ? 'ar' : undefined)}.` : (isArabic ? 'تظهر تقديرات الشلن الكيني عند توفر سعر صرف عام.' : 'KSh estimates appear when a public rate is available.')}</p>
           </section>
 
           {verifiedEmployerListings.length > 0 && <section className="home-section verified-employers-section">
-            <div className="section-heading"><div><span className="eyebrow">Reviewed employer profiles</span><h2>Verified employers & agencies</h2><p>Organizations shown here have passed GulfBridge’s listing review.</p></div><button className="text-button" type="button" onClick={() => { setVerifiedOnly(true); navigate('jobs') }}>Browse verified jobs <ArrowRight size={15} /></button></div>
+            <div className="section-heading"><div><span className="eyebrow">{isArabic ? 'ملفات أصحاب العمل المراجعين' : 'Reviewed employer profiles'}</span><h2>{isArabic ? 'أصحاب العمل ووكالات التوظيف المراجعون' : 'Verified employers & agencies'}</h2><p>{isArabic ? 'اجتازت المؤسسات المعروضة مراجعة الإعلانات لدى GulfBridge.' : 'Organizations shown here have passed GulfBridge’s listing review.'}</p></div><button className="text-button" type="button" onClick={() => { setVerifiedOnly(true); navigate('jobs') }}>{isArabic ? 'تصفح الوظائف المراجعة' : 'Browse verified jobs'} <ArrowRight size={15} /></button></div>
             <div className="verified-employer-grid">
               {verifiedEmployerListings.map((job) => <button className="verified-employer-card" key={job.company} type="button" onClick={() => setActiveJob(job)}>
                 <span className="company-avatar company-avatar-large">{getInitials(job.company)}</span>
                 <span className="verified-employer-copy"><strong>{job.company}</strong><small>{job.city}, {job.country} · {job.category}</small></span>
-                <span className="badge-verified"><BadgeCheck size={13} /> Verified</span>
+                <span className="badge-verified"><BadgeCheck size={13} /> {isArabic ? 'تمت المراجعة' : 'Reviewed'}</span>
               </button>)}
             </div>
           </section>}
 
           <section className="home-section how-section">
-            <div className="section-heading"><div><span className="eyebrow">Made for your journey</span><h2>{t('stepTitle')}</h2><p>{t('stepDescription')}</p></div><button className="button button-outline" type="button" onClick={() => navigate('applications')}>View tracker <ArrowRight size={16} /></button></div>
-            <div className="journey-steps">{['Applied', 'Interview', 'Offer', 'Visa', 'Flight'].map((step, index) => <div className="journey-step" key={step}><span className={`journey-number ${index === 0 ? 'current' : ''}`}>{index === 0 ? <Check size={15} /> : `0${index + 1}`}</span><div><strong>{step}</strong><small>{index === 0 ? 'Start your application' : 'Updates from your employer'}</small></div></div>)}</div>
+            <div className="section-heading"><div><span className="eyebrow">{isArabic ? 'مصمّم لرحلتك' : 'Made for your journey'}</span><h2>{t('stepTitle')}</h2><p>{t('stepDescription')}</p></div><button className="button button-outline" type="button" onClick={() => navigate('applications')}>{isArabic ? 'عرض المتابعة' : 'View tracker'} <ArrowRight size={16} /></button></div>
+            <div className="journey-steps">{['Applied', 'Interview', 'Offer', 'Visa', 'Flight'].map((step, index) => <div className="journey-step" key={step}><span className={`journey-number ${index === 0 ? 'current' : ''}`}>{index === 0 ? <Check size={15} /> : `0${index + 1}`}</span><div><strong>{isArabic ? (['تم التقديم', 'مقابلة', 'عرض عمل', 'تأشيرة', 'رحلة'][index]) : step}</strong><small>{index === 0 ? (isArabic ? 'ابدأ طلبك' : 'Start your application') : (isArabic ? 'تحديثات من صاحب العمل' : 'Updates from your employer')}</small></div></div>)}</div>
           </section>
 
           <section className="home-section career-guides-section">
-            <div className="section-heading"><div><span className="eyebrow">Plan your next step</span><h2>Career guides</h2><p>Helpful advice for applying and building a life abroad.</p></div><button className="text-button" type="button" onClick={() => navigate('guides')}>Explore guides <ArrowRight size={16} /></button></div>
+            <div className="section-heading"><div><span className="eyebrow">{isArabic ? 'خطط لخطوتك التالية' : 'Plan your next step'}</span><h2>{isArabic ? 'أدلة مهنية' : 'Career guides'}</h2><p>{isArabic ? 'نصائح مفيدة للتقديم وبناء حياة في الخارج.' : 'Helpful advice for applying and building a life abroad.'}</p></div><button className="text-button" type="button" onClick={() => navigate('guides')}>{isArabic ? 'استكشف الأدلة' : 'Explore guides'} <ArrowRight size={16} /></button></div>
             <div className="career-guide-teasers">
-              {careerGuides.slice(0, 3).map(({ icon: Icon, title }) => <button className="panel career-guide-teaser" key={title} type="button" onClick={() => navigate('guides')}><span className="guide-icon"><Icon size={18} /></span><strong>{title}</strong><ArrowRight size={15} /></button>)}
+              {careerGuides.slice(0, 3).map(({ icon: Icon, title, titleAr }) => <button className="panel career-guide-teaser" key={title} type="button" onClick={() => navigate('guides')}><span className="guide-icon"><Icon size={18} /></span><strong>{isArabic ? titleAr : title}</strong><ArrowRight size={15} /></button>)}
             </div>
           </section>
 
           <section className="home-section employer-cta">
-            <div><span className="eyebrow">For licensed recruiters and employers</span><h2>Bring your opportunity to GulfBridge.</h2><p>Submit your organization details and job offer for review. Every job is approved before publication.</p></div>
+            <div><span className="eyebrow">{isArabic ? 'لوكلاء التوظيف وأصحاب العمل المرخصين' : 'For licensed recruiters and employers'}</span><h2>{isArabic ? 'أضف فرصتك إلى GulfBridge.' : 'Bring your opportunity to GulfBridge.'}</h2><p>{isArabic ? 'أرسل تفاصيل مؤسستك وعرض العمل للمراجعة. تتم الموافقة على كل وظيفة قبل نشرها.' : 'Submit your organization details and job offer for review. Every job is approved before publication.'}</p></div>
             <button className="button button-gold" onClick={openPostJob} type="button">{t('postJob')} <ArrowRight size={16} /></button>
           </section>
         </main>
@@ -2748,7 +2905,7 @@ function App() {
   return (
     <div className={`app-root ${isArabic ? 'is-rtl' : ''} ${page === 'admin' ? 'admin-app' : ''} ${page === 'jobs' ? 'jobs-app' : ''}`}>
       <header className="site-header">
-        <a className="brand" href="#admin" onClick={(event) => { event.preventDefault(); openAdminAccess() }} aria-label="GulfBridge admin sign-in" title="Admin sign-in">
+        <a className="brand" href="#admin" onClick={(event) => { event.preventDefault(); openAdminAccess() }} aria-label={isArabic ? 'دخول مسؤول GulfBridge' : 'GulfBridge admin sign-in'} title={isArabic ? 'دخول المسؤول' : 'Admin sign-in'}>
           <span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span>
         </a>
         <div className="header-actions">
@@ -2756,7 +2913,7 @@ function App() {
           <button className="theme-toggle" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} type="button" aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} title={theme === 'dark' ? 'Light mode' : 'Dark mode'}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button>
           {account && <button className="header-message-button" onClick={() => navigate('inbox')} type="button" aria-label={unreadMessageCount ? `Messages, ${unreadMessageCount} unread` : 'Messages'} title="Messages"><MessageSquare size={17} />{unreadMessageCount > 0 && <span className="message-count-badge">{unreadMessageCount > 99 ? '99+' : unreadMessageCount}</span>}</button>}
           {installPrompt && <button className="button button-outline install-button" onClick={() => void installApp()} type="button"><ArrowDownToLine size={15} /><span>Install app</span></button>}
-          {account ? <div className="account-menu"><button className="avatar-button" onClick={() => navigate('profile')} type="button" aria-label="Open profile">{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button><div className="account-dropdown"><button type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button type="button" onClick={() => navigate('inbox')}>Messages</button><button type="button" onClick={() => navigate('alerts')}>Job alerts</button><button type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : 'Job seeker view'}</button>{account.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button type="button" onClick={() => void handleSignOut()}>{t('logout')}</button></div></div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
+          {account ? <div className={`account-menu ${accountMenuOpen ? 'open' : ''}`} ref={accountMenuRef}><button className="avatar-button" onClick={() => setAccountMenuOpen((open) => !open)} type="button" aria-label={isArabic ? 'فتح قائمة الحساب' : 'Open account menu'} aria-haspopup="menu" aria-expanded={accountMenuOpen}>{getInitials(account.name)}</button><button className="user-name-button" onClick={() => navigate('profile')} type="button">{account.name.split(' ')[0]}<ChevronDown size={14} /></button>{accountMenuOpen && <div className="account-dropdown" role="menu"><button role="menuitem" type="button" onClick={() => navigate('profile')}>{t('profile')}</button><button role="menuitem" type="button" onClick={() => navigate('saved')}>{t('savedJobs')}</button><button role="menuitem" type="button" onClick={() => navigate('applications')}>{t('applications')}</button><button role="menuitem" type="button" onClick={() => navigate('inbox')}>{isArabic ? 'الرسائل' : 'Messages'}</button><button role="menuitem" type="button" onClick={() => navigate('alerts')}>{isArabic ? 'تنبيهات الوظائف' : 'Job alerts'}</button><button role="menuitem" type="button" onClick={() => handleRoleSwitch(account.role === 'seeker' ? 'recruiter' : 'seeker')}>{account.role === 'seeker' ? t('employerArea') : (isArabic ? 'مساحة الباحث عن عمل' : 'Job seeker view')}</button>{account.roles.includes('admin') && <button role="menuitem" type="button" onClick={() => navigate('admin')}>{t('adminArea')}</button>}<button role="menuitem" type="button" onClick={() => { setAccountMenuOpen(false); void handleSignOut() }}>{t('logout')}</button></div>}</div> : <button className="button button-outline sign-in-button" onClick={() => { setAuthError(''); setAuthNotice(''); setAuthOpen(true) }} type="button"><UserRound size={15} /> {t('signIn')}</button>}
           <button className="button button-gold header-post" onClick={openPostJob} type="button">{t('postJob')}</button>
           <button className="mobile-menu-button" onClick={() => setMenuOpen((open) => !open)} type="button" aria-expanded={menuOpen} aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}>{menuOpen ? <X size={21} /> : <MenuIcon size={21} />}</button>
         </div>
@@ -2764,32 +2921,32 @@ function App() {
 
       {menuOpen && <button className="side-menu-backdrop" type="button" aria-label="Close navigation menu" onClick={() => setMenuOpen(false)} />}
       <nav className={`side-menu ${menuOpen ? 'open' : ''}`} aria-label="Main navigation" aria-hidden={!menuOpen} inert={!menuOpen}>
-        <div className="side-menu-heading"><span>Explore GulfBridge</span><button type="button" aria-label="Close navigation menu" onClick={() => setMenuOpen(false)}><X size={18} /></button></div>
-        <button type="button" onClick={() => navigate('home')}><Globe2 size={17} /> Home</button>
-        <button type="button" onClick={() => navigate('jobs')}><Search size={17} /> Find jobs</button>
-        <button type="button" onClick={() => navigate('map')}><MapPin size={17} /> Explore map</button>
-        <button type="button" onClick={() => navigate('guides')}><BookOpen size={17} /> Career guides</button>
-        <button type="button" onClick={() => navigate('alerts')}><BellRing size={17} /> Job alerts</button>
-        {account && <button type="button" onClick={() => navigate('inbox')}><MessageSquare size={17} /> Messages</button>}
-        <button type="button" onClick={() => navigate('help')}><ShieldCheck size={17} /> Help & safety</button>
-        <button type="button" onClick={openPostJob}><BriefcaseBusiness size={17} /> For employers</button>
-        {account && <button type="button" onClick={() => navigate('applications')}><FileCheck2 size={17} /> Applications</button>}
-        {account?.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}><LockKeyhole size={17} /> Admin workspace</button>}
-        <span className="side-menu-label">Popular destinations</span>
+        <div className="side-menu-heading"><span>{isArabic ? 'استكشف GulfBridge' : 'Explore GulfBridge'}</span><button type="button" aria-label={isArabic ? 'إغلاق قائمة التنقل' : 'Close navigation menu'} onClick={() => setMenuOpen(false)}><X size={18} /></button></div>
+        <button type="button" onClick={() => navigate('home')}><Globe2 size={17} /> {isArabic ? 'الرئيسية' : 'Home'}</button>
+        <button type="button" onClick={() => navigate('jobs')}><Search size={17} /> {isArabic ? 'ابحث عن وظائف' : 'Find jobs'}</button>
+        <button type="button" onClick={() => navigate('map')}><MapPin size={17} /> {isArabic ? 'استكشف الخريطة' : 'Explore map'}</button>
+        <button type="button" onClick={() => navigate('guides')}><BookOpen size={17} /> {isArabic ? 'أدلة مهنية' : 'Career guides'}</button>
+        <button type="button" onClick={() => navigate('alerts')}><BellRing size={17} /> {isArabic ? 'تنبيهات الوظائف' : 'Job alerts'}</button>
+        {account && <button type="button" onClick={() => navigate('inbox')}><MessageSquare size={17} /> {isArabic ? 'الرسائل' : 'Messages'}</button>}
+        <button type="button" onClick={() => navigate('help')}><ShieldCheck size={17} /> {isArabic ? 'المساعدة والسلامة' : 'Help & safety'}</button>
+        <button type="button" onClick={openPostJob}><BriefcaseBusiness size={17} /> {isArabic ? 'لأصحاب العمل' : 'For employers'}</button>
+        {account && <button type="button" onClick={() => navigate('applications')}><FileCheck2 size={17} /> {isArabic ? 'الطلبات' : 'Applications'}</button>}
+        {account?.roles.includes('admin') && <button type="button" onClick={() => navigate('admin')}><LockKeyhole size={17} /> {isArabic ? 'مساحة الإدارة' : 'Admin workspace'}</button>}
+        <span className="side-menu-label">{isArabic ? 'وجهات شائعة' : 'Popular destinations'}</span>
         {countryHighlights.slice(0, 6).map(({ country, flag }) => <button className="side-menu-country" key={country} type="button" onClick={() => { setDestinationFilter(country); navigate('jobs') }}><span>{flag}</span>{country}</button>)}
-        <div className="side-menu-bottom"><button type="button" onClick={() => account ? navigate('profile') : setAuthOpen(true)}><UserRound size={17} /> {account ? 'My profile' : 'Sign in'}</button></div>
+        <div className="side-menu-bottom"><button type="button" onClick={() => account ? navigate('profile') : setAuthOpen(true)}><UserRound size={17} /> {account ? (isArabic ? 'ملفي الشخصي' : 'My profile') : t('signIn')}</button></div>
       </nav>
 
-      <WelcomeVideo visible={page === 'home'} />
+      <WelcomeVideo visible={page === 'home'} isArabic={isArabic} />
       {renderPage()}
 
       <footer className="site-footer">
         <div className="footer-main">
           <a className="brand footer-brand" href="#" onClick={(event) => { event.preventDefault(); navigate('home') }}><span className="brand-mark"><span /></span><span className="brand-word">GULF<span>BRIDGE</span><small>KENYA · GLOBAL OPPORTUNITIES</small></span></a>
-          <p>Clearer routes to work abroad. Built for Kenyan job seekers and responsible employers.</p>
-          <div className="footer-links"><button onClick={() => navigate('jobs')} type="button">Find jobs</button><button onClick={() => navigate('map')} type="button">Explore map</button><button onClick={openPostJob} type="button">For employers</button><button onClick={() => navigate('help')} type="button">{t('navHelp')}</button></div>
+          <p>{isArabic ? 'مسارات أوضح للعمل في الخارج. صُممت للباحثين عن عمل في كينيا وأصحاب العمل المسؤولين.' : 'Clearer routes to work abroad. Built for Kenyan job seekers and responsible employers.'}</p>
+          <div className="footer-links"><button onClick={() => navigate('jobs')} type="button">{isArabic ? 'ابحث عن وظائف' : 'Find jobs'}</button><button onClick={() => navigate('map')} type="button">{isArabic ? 'استكشف الخريطة' : 'Explore map'}</button><button onClick={openPostJob} type="button">{t('navEmployers')}</button><button onClick={() => navigate('help')} type="button">{t('navHelp')}</button></div>
         </div>
-        <div className="footer-bottom"><span>© {new Date().getFullYear()} GulfBridge</span><span>Verify every offer and contract independently</span><span className="footer-secure"><ShieldCheck size={14} /> Privacy-first by design</span></div>
+        <div className="footer-bottom"><span>© {new Date().getFullYear()} GulfBridge</span><span>{isArabic ? 'تحقق من كل عرض وعقد بشكل مستقل' : 'Verify every offer and contract independently'}</span><span className="footer-secure"><ShieldCheck size={14} /> {isArabic ? 'الخصوصية أولًا' : 'Privacy-first by design'}</span></div>
       </footer>
 
       <div className="mobile-bottom-nav">
@@ -2797,14 +2954,14 @@ function App() {
         <button className={page === 'jobs' ? 'active' : ''} onClick={() => navigate('jobs')} type="button"><Search size={19} /><span>{isArabic ? 'بحث' : 'Search'}</span></button>
         <button className={page === 'saved' ? 'active' : ''} onClick={() => navigate('saved')} type="button"><Heart size={19} /><span>{isArabic ? 'المحفوظة' : 'Saved'}</span></button>
         <button className={page === 'applications' ? 'active' : ''} onClick={() => navigate('applications')} type="button"><FileCheck2 size={19} /><span>{isArabic ? 'الطلبات' : 'Tracker'}</span></button>
-        <button className={page === 'inbox' ? 'active' : ''} onClick={() => navigate('inbox')} type="button" aria-label={unreadMessageCount ? `Messages, ${unreadMessageCount} unread` : 'Messages'}><span className="mobile-message-icon"><MessageSquare size={19} />{unreadMessageCount > 0 && <i />}</span><span>Messages</span></button>
+        <button className={page === 'inbox' ? 'active' : ''} onClick={() => navigate('inbox')} type="button" aria-label={unreadMessageCount ? `${isArabic ? 'الرسائل' : 'Messages'}, ${unreadMessageCount} ${isArabic ? 'غير مقروءة' : 'unread'}` : (isArabic ? 'الرسائل' : 'Messages')}><span className="mobile-message-icon"><MessageSquare size={19} />{unreadMessageCount > 0 && <i />}</span><span>{isArabic ? 'الرسائل' : 'Messages'}</span></button>
       </div>
 
-      {activeJob && <JobModal job={activeJob} onClose={() => setActiveJob(null)} onApply={startApply} onSave={toggleSave} isSaved={savedIds.includes(activeJob.id)} t={t} toKes={toKes} />}
-      {applyJob && <ApplyModal job={applyJob} onClose={() => setApplyJob(null)} onSubmit={submitApplication} isSubmitting={isSubmitting} />}
-      {authOpen && <AuthModal adminMode={adminLoginMode} onClose={() => { setAuthOpen(false); setAdminLoginMode(false) }} onSubmit={handleAuth} error={authError} notice={authNotice} configurationMessage={configurationMessage} />}
-      {profileEditing && profileDraft && <ProfileModal profile={profileDraft} onChange={setProfileDraft} onClose={() => setProfileEditing(false)} onSubmit={saveProfile} t={t} />}
-      {deleteConfirmOpen && <DeleteAccountModal onClose={() => setDeleteConfirmOpen(false)} onConfirm={() => void handleDeleteAccount()} isSubmitting={isSubmitting} />}
+      {activeJob && <JobModal job={activeJob} onClose={() => setActiveJob(null)} onApply={startApply} onSave={toggleSave} isSaved={savedIds.includes(activeJob.id)} t={t} toKes={toKes} isArabic={isArabic} />}
+      {applyJob && <ApplyModal job={applyJob} onClose={() => setApplyJob(null)} onSubmit={submitApplication} isSubmitting={isSubmitting} isArabic={isArabic} />}
+      {authOpen && <AuthModal adminMode={adminLoginMode} onClose={() => { setAuthOpen(false); setAdminLoginMode(false) }} onSubmit={handleAuth} error={authError} notice={authNotice} configurationMessage={configurationMessage} isArabic={isArabic} />}
+      {profileEditing && profileDraft && <ProfileModal profile={profileDraft} onChange={setProfileDraft} onClose={() => setProfileEditing(false)} onSubmit={saveProfile} t={t} isArabic={isArabic} />}
+      {deleteConfirmOpen && <DeleteAccountModal onClose={() => setDeleteConfirmOpen(false)} onConfirm={() => void handleDeleteAccount()} isSubmitting={isSubmitting} isArabic={isArabic} />}
       {messageAlert && <div className="message-toast" role="status"><button className="message-toast-open" type="button" onClick={() => {
         const conversation = inboxConversations.find((item) => item.id === messageAlert.conversationId)
         if (conversation) setInboxTargetUserId(conversation.user_id)
@@ -2817,7 +2974,7 @@ function App() {
   )
 }
 
-function WelcomeVideo({ visible }: { visible: boolean }) {
+function WelcomeVideo({ visible, isArabic }: { visible: boolean; isArabic: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [hasPlayed, setHasPlayed] = useState(false)
   const [isMuted, setIsMuted] = useState(true)
@@ -2860,7 +3017,7 @@ function WelcomeVideo({ visible }: { visible: boolean }) {
   }
 
   return (
-    <section className={`welcome-video-section ${visible ? '' : 'welcome-video-hidden'}`} aria-label="GulfBridge welcome video" aria-hidden={!visible}>
+    <section className={`welcome-video-section ${visible ? '' : 'welcome-video-hidden'}`} aria-label={isArabic ? 'فيديو الترحيب من GulfBridge' : 'GulfBridge welcome video'} aria-hidden={!visible}>
       <div className={`welcome-video-frame${isEnded ? ' is-ended' : ''}${hasError ? ' has-error' : ''}`}>
         <video
           ref={videoRef}
@@ -2883,7 +3040,7 @@ function WelcomeVideo({ visible }: { visible: boolean }) {
           <button
             className="welcome-video-sound"
             type="button"
-            aria-label={isMuted ? 'Unmute welcome video' : 'Mute welcome video'}
+            aria-label={isMuted ? (isArabic ? 'تشغيل صوت فيديو الترحيب' : 'Unmute welcome video') : (isArabic ? 'كتم صوت فيديو الترحيب' : 'Mute welcome video')}
             aria-pressed={!isMuted}
             onClick={() => {
               const video = videoRef.current
@@ -2897,14 +3054,14 @@ function WelcomeVideo({ visible }: { visible: boolean }) {
           </button>
         )}
         {isEnded && (
-          <button className="welcome-video-replay" type="button" aria-label="Replay welcome video" onClick={replay}>
+          <button className="welcome-video-replay" type="button" aria-label={isArabic ? 'إعادة تشغيل فيديو الترحيب' : 'Replay welcome video'} onClick={replay}>
             <Play size={19} fill="currentColor" />
           </button>
         )}
         {hasError && (
           <div className="welcome-video-error" role="alert">
-            <span>Welcome video could not be loaded.</span>
-            <button type="button" onClick={retry}>Retry</button>
+            <span>{isArabic ? 'تعذر تحميل فيديو الترحيب.' : 'Welcome video could not be loaded.'}</span>
+            <button type="button" onClick={retry}>{isArabic ? 'إعادة المحاولة' : 'Retry'}</button>
           </div>
         )}
       </div>
@@ -2921,24 +3078,26 @@ type JobCardProps = {
   onSave: (job: Job) => void
   t: (key: TranslationKey) => string
   toKes: (amount: number, currency: string) => number | null
+  isArabic: boolean
 }
 
-function JobCard({ job, index, isSaved, isExample, onOpen, onSave, t, toKes }: JobCardProps) {
+function JobCard({ job, index, isSaved, isExample, onOpen, onSave, t, toKes, isArabic }: JobCardProps) {
   return (
     <article className={`job-card job-card-${index % 3}`}>
       <div className="job-card-top">
         <div className="company-avatar">{getInitials(job.company)}</div>
-        <div className="job-company"><strong>{job.company}</strong><span><MapPin size={12} />{job.city}, {job.country}</span></div>
+        <div className="job-company"><strong>{job.company}</strong><span><MapPin size={12} />{job.city}, {localizeCountry(job.country, isArabic)}</span></div>
         <button className={`icon-button save-button ${isSaved ? 'is-saved' : ''}`} aria-label={isSaved ? 'Remove saved job' : t('save')} onClick={() => onSave(job)} type="button"><Heart size={17} fill={isSaved ? 'currentColor' : 'none'} /></button>
       </div>
       <button className="job-card-title" onClick={() => onOpen(job)} type="button"><h3>{job.title}</h3><ArrowUpRight size={16} /></button>
-      <div className="job-tags"><span>{job.category}</span><span>{job.employmentType}</span></div>
+      <div className="job-tags"><span>{localizeCategory(job.category, isArabic)}</span><span>{isArabic ? ({ 'Full time': 'دوام كامل', 'Part time': 'دوام جزئي', Contract: 'عقد', Seasonal: 'موسمي' } as Record<string, string>)[job.employmentType] || job.employmentType : job.employmentType}</span></div>
       <p className="job-salary">{currencyRange(job, toKes)}</p>
       <div className="job-card-bottom">
-        <div className="job-badges">{job.verified ? <span className="badge-verified"><BadgeCheck size={13} /> {t('verified')}</span> : <span className="badge-neutral">Not yet platform-verified</span>}{job.premium && <span className="badge-premium"><Sparkles size={12} /> Premium</span>}</div>
+        <div className="job-badges">{job.verified ? <span className="badge-verified"><BadgeCheck size={13} /> {t('verified')}</span> : <span className="badge-neutral">{isArabic ? 'لم تتم مراجعته بعد' : 'Not yet platform-verified'}</span>}{job.premium && <span className="badge-premium"><Sparkles size={12} /> {isArabic ? 'مميز' : 'Premium'}</span>}</div>
+        {job.verified && <small className="verification-review-date">{job.verificationCheckedAt ? `${isArabic ? 'تاريخ المراجعة' : 'Reviewed'} · ${new Date(job.verificationCheckedAt).toLocaleDateString(isArabic ? 'ar' : undefined)}` : (isArabic ? 'تاريخ المراجعة غير متاح' : 'Review date unavailable')}</small>}
         <span className="posted-time">{job.posted}</span>
       </div>
-      <button className="job-card-open" onClick={() => onOpen(job)} type="button">View details <ArrowRight size={14} /></button>
+      <button className="job-card-open" onClick={() => onOpen(job)} type="button">{isArabic ? 'عرض التفاصيل' : 'View details'} <ArrowRight size={14} /></button>
       {isExample && <span className="example-listing">{t('sample')}</span>}
     </article>
   )
@@ -2948,175 +3107,187 @@ function PageHeading({ eyebrow, title, description, action, onBack, backLabel }:
   return <div className="page-heading"><div className="page-heading-art" aria-hidden="true"><img src={flightPhoto} alt="" loading="lazy" /><span><Plane size={18} /></span></div><button className="button button-outline page-back-button" onClick={onBack} type="button"><ArrowLeft size={15} />{backLabel}</button><div className="page-heading-copy"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{description}</p></div>{action}</div>
 }
 
-function FilterBar({ destinations: destinationOptions, categories, destination, category, verifiedOnly, onDestination, onCategory, onVerifiedOnly, onSearch, search }: {
+function FilterBar({ destinations: destinationOptions, categories, destination, category, verifiedOnly, onDestination, onCategory, onVerifiedOnly, onSearch, search, isArabic }: {
   destinations: string[]; categories: string[]; destination: string; category: string; verifiedOnly: boolean;
-  onDestination: (value: string) => void; onCategory: (value: string) => void; onVerifiedOnly: (value: boolean) => void; onSearch: (value: string) => void; search: string
+  onDestination: (value: string) => void; onCategory: (value: string) => void; onVerifiedOnly: (value: boolean) => void; onSearch: (value: string) => void; search: string; isArabic: boolean
 }) {
   return (
     <div className="filter-bar">
-      <div className="filter-search"><Search size={17} /><label className="sr-only" htmlFor="listing-search">Search opportunities</label><input id="listing-search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search role, company, destination..." /></div>
-      <label className="select-wrap"><span className="sr-only">Destination</span><select value={destination} onChange={(event) => onDestination(event.target.value)}>{destinationOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><ChevronDown size={15} /></label>
-      <label className="select-wrap"><span className="sr-only">Job category</span><select value={category} onChange={(event) => onCategory(event.target.value)}>{categories.map((option) => <option key={option} value={option}>{option}</option>)}</select><ChevronDown size={15} /></label>
-      <button className={`filter-verified ${verifiedOnly ? 'selected' : ''}`} onClick={() => onVerifiedOnly(!verifiedOnly)} type="button"><ShieldCheck size={15} /> Verified only</button>
+      <div className="filter-search"><Search size={17} /><label className="sr-only" htmlFor="listing-search">{isArabic ? 'ابحث عن الفرص' : 'Search opportunities'}</label><input id="listing-search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder={isArabic ? 'ابحث عن وظيفة أو شركة أو وجهة...' : 'Search role, company, destination...'} /></div>
+      <label className="select-wrap"><span className="sr-only">{isArabic ? 'الوجهة' : 'Destination'}</span><select value={destination} onChange={(event) => onDestination(event.target.value)}>{destinationOptions.map((option) => <option key={option} value={option}>{option === 'All destinations' ? (isArabic ? 'كل الوجهات' : option) : localizeCountry(option, isArabic)}</option>)}</select><ChevronDown size={15} /></label>
+      <label className="select-wrap"><span className="sr-only">{isArabic ? 'مجال العمل' : 'Job category'}</span><select value={category} onChange={(event) => onCategory(event.target.value)}>{categories.map((option) => <option key={option} value={option}>{localizeCategory(option, isArabic)}</option>)}</select><ChevronDown size={15} /></label>
+      <button className={`filter-verified ${verifiedOnly ? 'selected' : ''}`} onClick={() => onVerifiedOnly(!verifiedOnly)} type="button"><ShieldCheck size={15} /> {isArabic ? 'أصحاب العمل المراجعون فقط' : 'Reviewed employers only'}</button>
     </div>
   )
 }
 
-function JobModal({ job, onClose, onApply, onSave, isSaved, t, toKes }: { job: Job; onClose: () => void; onApply: (job: Job) => void; onSave: (job: Job) => void; isSaved: boolean; t: (key: TranslationKey) => string; toKes: (amount: number, currency: string) => number | null }) {
+function JobModal({ job, onClose, onApply, onSave, isSaved, t, toKes, isArabic }: { job: Job; onClose: () => void; onApply: (job: Job) => void; onSave: (job: Job) => void; isSaved: boolean; t: (key: TranslationKey) => string; toKes: (amount: number, currency: string) => number | null; isArabic: boolean }) {
   return (
     <Modal onClose={onClose} className="job-detail-modal">
       <button className="icon-button modal-close" type="button" aria-label="Close" onClick={onClose}><X size={20} /></button>
       <div className="job-detail-layout">
         <aside className="job-detail-summary">
           <div className="job-modal-header"><div className="company-avatar company-avatar-large">{getInitials(job.company)}</div></div>
-          <span className="job-detail-brand">{job.verified ? <BadgeCheck size={15} /> : <ShieldCheck size={15} />}{job.verified ? 'Verified employer' : 'Employer review status'}</span>
+          <span className="job-detail-brand">{job.verified ? <BadgeCheck size={15} /> : <ShieldCheck size={15} />}{job.verified ? (isArabic ? 'صاحب عمل تمت مراجعته' : 'Reviewed employer') : (isArabic ? 'حالة مراجعة صاحب العمل' : 'Employer review status')}</span>
       <h2>{job.title}</h2><p className="job-modal-company">{job.company}</p>
-      <div className="job-badges">{job.verified ? <span className="badge-verified"><BadgeCheck size={13} /> {t('verified')}</span> : <span className="badge-neutral">Verification not confirmed</span>}{job.premium && <span className="badge-premium"><Sparkles size={12} /> Premium employer</span>}</div>
+      <div className="job-badges">{job.verified ? <span className="badge-verified"><BadgeCheck size={13} /> {t('verified')}</span> : <span className="badge-neutral">{isArabic ? 'لم يتم تأكيد المراجعة' : 'Review not confirmed'}</span>}{job.premium && <span className="badge-premium"><Sparkles size={12} /> {isArabic ? 'صاحب عمل مميز' : 'Premium employer'}</span>}</div>
+      {job.verified && <p className="verification-review-date">{job.verificationCheckedAt
+        ? `${isArabic ? 'آخر مراجعة' : 'Last reviewed'}: ${new Date(job.verificationCheckedAt).toLocaleDateString(isArabic ? 'ar' : undefined)}`
+        : (isArabic ? 'تاريخ المراجعة غير متاح' : 'Review date unavailable')}</p>}
       <div className="job-modal-salary"><WalletCards size={17} /><div><strong>{currencyRange(job, toKes)}</strong><small>{t('salaryNote')}</small></div></div>
-      <div className="job-detail-facts"><span><MapPin size={14} />{job.city}, {job.country}</span><span><BriefcaseBusiness size={14} />{job.category}</span><span><Check size={14} />{job.employmentType}</span></div>
+      <div className="job-detail-facts"><span><MapPin size={14} />{job.city}, {localizeCountry(job.country, isArabic)}</span><span><BriefcaseBusiness size={14} />{localizeCategory(job.category, isArabic)}</span><span><Check size={14} />{isArabic ? ({ 'Full time': 'دوام كامل', 'Part time': 'دوام جزئي', Contract: 'عقد', Seasonal: 'موسمي' } as Record<string, string>)[job.employmentType] || job.employmentType : job.employmentType}</span></div>
       </aside>
       <div className="job-detail-content">
-      <span className="eyebrow">{job.city}, {job.country} · {job.category}</span>
-      <section><h3>Job description</h3><p className="job-description">{job.description}</p></section>
-      <section><h3>Requirements</h3><ul className="check-list">{job.requirements.map((requirement) => <li key={requirement}><Check size={15} />{requirement}</li>)}</ul></section>
-      <section><h3>Benefits listed by employer</h3><ul className="check-list">{job.benefits.map((benefit) => <li key={benefit}><Check size={15} />{benefit}</li>)}</ul></section>
-      <div className="privacy-callout"><LockKeyhole size={17} /><span>Your CV and ID/passport stay private and are shared only for this application with authorized parties.</span></div>
-      <div className="modal-actions"><button className="button button-gold" onClick={() => onApply(job)} type="button">{t('apply')} <ArrowRight size={16} /></button><button className="button button-outline" onClick={() => onSave(job)} type="button"><Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />{isSaved ? t('saved') : t('save')}</button>{job.premium && job.whatsapp && <a className="button button-whatsapp" href={`https://wa.me/${job.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />Contact company on WhatsApp</a>}</div>
-      <p className="fine-print">WhatsApp opens a direct conversation with the premium employer. Do not send sensitive identity documents over WhatsApp. GulfBridge applications remain on-platform.</p>
+      <span className="eyebrow">{job.city}, {localizeCountry(job.country, isArabic)} · {localizeCategory(job.category, isArabic)}</span>
+      <section><h3>{isArabic ? 'وصف الوظيفة' : 'Job description'}</h3><p className="job-description">{job.description}</p></section>
+      <section><h3>{isArabic ? 'المتطلبات' : 'Requirements'}</h3><ul className="check-list">{job.requirements.map((requirement) => <li key={requirement}><Check size={15} />{requirement}</li>)}</ul></section>
+      <section><h3>{isArabic ? 'المزايا المذكورة من صاحب العمل' : 'Benefits listed by employer'}</h3><ul className="check-list">{job.benefits.map((benefit) => <li key={benefit}><Check size={15} />{benefit}</li>)}</ul></section>
+      <div className="privacy-callout"><LockKeyhole size={17} /><span>{isArabic ? 'تبقى سيرتك الذاتية ووثائق هويتك خاصة ولا تُشارك إلا لأغراض هذا الطلب مع الجهات المخوّلة.' : 'Your CV and ID/passport stay private and are shared only for this application with authorized parties.'}</span></div>
+      <div className="modal-actions"><button className="button button-gold" onClick={() => onApply(job)} type="button">{t('apply')} <ArrowRight size={16} /></button><button className="button button-outline" onClick={() => onSave(job)} type="button"><Heart size={16} fill={isSaved ? 'currentColor' : 'none'} />{isSaved ? t('saved') : t('save')}</button>{job.premium && job.whatsapp && <a className="button button-whatsapp" href={`https://wa.me/${job.whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"><MessageCircle size={16} />{isArabic ? 'تواصل عبر واتساب' : 'Contact company on WhatsApp'}</a>}</div>
+      <p className="fine-print">{isArabic ? 'يفتح واتساب محادثة مباشرة مع صاحب العمل المميز. لا ترسل وثائق الهوية الحساسة عبر واتساب. تبقى الطلبات على GulfBridge.' : 'WhatsApp opens a direct conversation with the premium employer. Do not send sensitive identity documents over WhatsApp. GulfBridge applications remain on-platform.'}</p>
       </div>
       </div>
     </Modal>
   )
 }
 
-function ApplyModal({ job, onClose, onSubmit, isSubmitting }: { job: Job; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isSubmitting: boolean }) {
+function ApplyModal({ job, onClose, onSubmit, isSubmitting, isArabic }: { job: Job; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isSubmitting: boolean; isArabic: boolean }) {
   return (
     <Modal onClose={onClose} className="form-modal">
-      <span className="eyebrow">Secure application</span><h2>Apply for {job.title}</h2><p className="modal-description">{job.company} · {job.city}, {job.country}</p>
-      <div className="privacy-callout"><LockKeyhole size={17} /><span>Upload your CV and either a Kenyan national ID or passport image. Files are private and attached only to this application.</span></div>
+      <span className="eyebrow">{isArabic ? 'تقديم آمن' : 'Secure application'}</span><h2>{isArabic ? `التقديم على ${job.title}` : `Apply for ${job.title}`}</h2><p className="modal-description">{job.company} · {job.city}, {job.country}</p>
+      <div className="privacy-callout"><LockKeyhole size={17} /><span>{isArabic ? 'أرفق سيرتك الذاتية وصورة من بطاقة الهوية الكينية أو جواز السفر. الملفات خاصة ومرتبطة بهذا الطلب فقط.' : 'Upload your CV and either a Kenyan national ID or passport image. Files are private and attached only to this application.'}</span></div>
       <form className="stack-form" onSubmit={onSubmit}>
-        <label className="file-field"><span><FileText size={17} /> CV <small>PDF, DOC, or DOCX · max 10 MB</small></span><input name="cv" type="file" accept=".pdf,.doc,.docx,application/pdf" required /></label>
-        <label className="form-label">Identity document
-          <select name="identityKind" required defaultValue="passport"><option value="passport">Passport</option><option value="national_id">Kenyan national ID</option></select>
+        <label className="file-field"><span><FileText size={17} /> {isArabic ? 'السيرة الذاتية' : 'CV'} <small>{isArabic ? 'PDF أو DOC أو DOCX · بحد أقصى 10 ميغابايت' : 'PDF, DOC, or DOCX · max 10 MB'}</small></span><input name="cv" type="file" accept=".pdf,.doc,.docx,application/pdf" required /></label>
+        <label className="form-label">{isArabic ? 'وثيقة الهوية' : 'Identity document'}
+          <select name="identityKind" required defaultValue="passport"><option value="passport">{isArabic ? 'جواز السفر' : 'Passport'}</option><option value="national_id">{isArabic ? 'بطاقة الهوية الكينية' : 'Kenyan national ID'}</option></select>
         </label>
-        <label className="file-field"><span><LockKeyhole size={17} /> Identity image <small>JPG, PNG, or PDF · max 10 MB</small></span><input name="identity" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" required /></label>
-        <label className="consent-check"><input type="checkbox" required /><span>I consent to sharing these documents with this job’s employer and authorized GulfBridge admins for recruitment review. <a href="#privacy" onClick={(event) => event.preventDefault()}>Privacy notice</a></span></label>
-        <div className="modal-actions"><button className="button button-gold" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Submitting securely…' : 'Submit application'} <ArrowRight size={16} /></button><button className="button button-outline" onClick={onClose} type="button">Cancel</button></div>
-        <p className="fine-print">Never pay a recruiter through an unverified personal account. Confirm visa and contract requirements with official sources.</p>
+        <label className="file-field"><span><LockKeyhole size={17} /> {isArabic ? 'صورة وثيقة الهوية' : 'Identity image'} <small>{isArabic ? 'JPG أو PNG أو PDF · بحد أقصى 10 ميغابايت' : 'JPG, PNG, or PDF · max 10 MB'}</small></span><input name="identity" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" required /></label>
+        <label className="consent-check"><input type="checkbox" required /><span>{isArabic ? 'أوافق على مشاركة هذه المستندات مع صاحب العمل ومسؤولي GulfBridge المخوّلين لمراجعة التوظيف.' : 'I consent to sharing these documents with this job’s employer and authorized GulfBridge admins for recruitment review.'} <a href="#privacy" onClick={(event) => event.preventDefault()}>{isArabic ? 'إشعار الخصوصية' : 'Privacy notice'}</a></span></label>
+        <div className="modal-actions"><button className="button button-gold" type="submit" disabled={isSubmitting}>{isSubmitting ? (isArabic ? 'جارٍ الإرسال بأمان…' : 'Submitting securely…') : (isArabic ? 'إرسال الطلب' : 'Submit application')} <ArrowRight size={16} /></button><button className="button button-outline" onClick={onClose} type="button">{isArabic ? 'إلغاء' : 'Cancel'}</button></div>
+        <p className="fine-print">{isArabic ? 'لا تدفع لوكيل عبر حساب شخصي غير موثّق. تحقق من متطلبات التأشيرة والعقد عبر مصادر رسمية.' : 'Never pay a recruiter through an unverified personal account. Confirm visa and contract requirements with official sources.'}</p>
       </form>
     </Modal>
   )
 }
 
-function AuthModal({ onClose, onSubmit, error, notice, configurationMessage: configMessage, adminMode = false }: { onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; error: string; notice: string; configurationMessage: string; adminMode?: boolean }) {
+function AuthModal({ onClose, onSubmit, error, notice, configurationMessage: configMessage, adminMode = false, isArabic }: { onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; error: string; notice: string; configurationMessage: string; adminMode?: boolean; isArabic: boolean }) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   return (
     <Modal onClose={onClose} className="form-modal auth-modal">
-      <span className="eyebrow">{adminMode ? 'Restricted workspace' : 'Your GulfBridge account'}</span><h2>{adminMode ? 'Admin sign in' : mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2><p className="modal-description">{adminMode ? 'Sign in with the existing authorized admin account. Admin account registration is disabled on this website.' : 'One account can include both job seeker and recruiter roles.'}</p>
-      {!adminMode && <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>Sign in</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>Create account</button></div>}
+      <span className="eyebrow">{adminMode ? (isArabic ? 'مساحة مقيّدة' : 'Restricted workspace') : (isArabic ? 'حساب GulfBridge الخاص بك' : 'Your GulfBridge account')}</span><h2>{adminMode ? (isArabic ? 'تسجيل دخول المسؤول' : 'Admin sign in') : mode === 'signin' ? (isArabic ? 'مرحبًا بعودتك' : 'Welcome back') : (isArabic ? 'أنشئ حسابك' : 'Create your account')}</h2><p className="modal-description">{adminMode ? (isArabic ? 'سجّل الدخول بالحساب الإداري المخوّل. لا يمكن إنشاء حساب إداري من هذا الموقع.' : 'Sign in with the existing authorized admin account. Admin account registration is disabled on this website.') : (isArabic ? 'يمكن أن يتضمن الحساب نفسه دور الباحث عن عمل ووكيل التوظيف.' : 'One account can include both job seeker and recruiter roles.')}</p>
+      {!adminMode && <div className="auth-tabs"><button type="button" className={mode === 'signin' ? 'active' : ''} onClick={() => setMode('signin')}>{isArabic ? 'تسجيل الدخول' : 'Sign in'}</button><button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>{isArabic ? 'إنشاء حساب' : 'Create account'}</button></div>}
       <form className="stack-form" onSubmit={onSubmit}>
         <input type="hidden" name="mode" value={adminMode ? 'signin' : mode} />
-        {!adminMode && mode === 'signup' && <><label className="form-label">Full name<input name="fullName" autoComplete="name" required /></label><label className="form-label">Phone number<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>Required during registration for account security and contact.</small></label></>}
-        <label className="form-label">Email address<input name="email" type="email" autoComplete="email" required /></label>
-        <label className="form-label">Password<input name="password" type="password" autoComplete={!adminMode && mode === 'signup' ? 'new-password' : 'current-password'} minLength={8} required /><small>Use at least 8 characters.</small></label>
+        {!adminMode && mode === 'signup' && <><label className="form-label">{isArabic ? 'الاسم الكامل' : 'Full name'}<input name="fullName" autoComplete="name" required /></label><label className="form-label">{isArabic ? 'رقم الهاتف' : 'Phone number'}<input name="phone" type="tel" autoComplete="tel" placeholder="+254 7XX XXX XXX" required /><small>{isArabic ? 'مطلوب لأمان الحساب والتواصل.' : 'Required during registration for account security and contact.'}</small></label></>}
+        <label className="form-label">{isArabic ? 'البريد الإلكتروني' : 'Email address'}<input name="email" type="email" autoComplete="email" required /></label>
+        <label className="form-label">{isArabic ? 'كلمة المرور' : 'Password'}<input name="password" type="password" autoComplete={!adminMode && mode === 'signup' ? 'new-password' : 'current-password'} minLength={8} required /><small>{isArabic ? 'استخدم 8 أحرف على الأقل.' : 'Use at least 8 characters.'}</small></label>
         {(error || notice) && <p className={error ? 'form-error' : 'form-success'} role="status">{error || notice}</p>}
-        <button className="button button-gold button-full" type="submit">{adminMode ? 'Sign in to admin workspace' : mode === 'signin' ? 'Sign in securely' : 'Create account'} <ArrowRight size={16} /></button>
+        <button className="button button-gold button-full" type="submit">{adminMode ? (isArabic ? 'الدخول إلى مساحة الإدارة' : 'Sign in to admin workspace') : mode === 'signin' ? (isArabic ? 'تسجيل الدخول بأمان' : 'Sign in securely') : (isArabic ? 'إنشاء حساب' : 'Create account')} <ArrowRight size={16} /></button>
       </form>
-      <div className="privacy-callout"><ShieldCheck size={17} /><span>{adminMode ? 'Your CV and identity documents are never collected during admin sign-in.' : 'Your CV and identity documents are not collected during registration.'}</span></div>
+      <div className="privacy-callout"><ShieldCheck size={17} /><span>{adminMode ? (isArabic ? 'لا تُجمع سيرتك الذاتية أو وثائق هويتك عند تسجيل الدخول الإداري.' : 'Your CV and identity documents are never collected during admin sign-in.') : (isArabic ? 'لا تُجمع سيرتك الذاتية أو وثائق هويتك أثناء التسجيل.' : 'Your CV and identity documents are not collected during registration.')}</span></div>
       {!isSupabaseConfigured && <p className="setup-warning">{configMessage} Sign-in here is demo-only.</p>}
     </Modal>
   )
 }
 
-function ProfileModal({ profile, onChange, onClose, onSubmit, t }: { profile: Account; onChange: (value: Account) => void; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; t: (key: TranslationKey) => string }) {
+function ProfileModal({ profile, onChange, onClose, onSubmit, t, isArabic }: { profile: Account; onChange: (value: Account) => void; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void; t: (key: TranslationKey) => string; isArabic: boolean }) {
   const update = (key: ProfileKey, value: string) => onChange({ ...profile, [key]: value })
   return (
     <Modal onClose={onClose} className="form-modal">
-      <span className="eyebrow">Account settings</span><h2>{t('editProfile')}</h2><p className="modal-description">Your phone number is required. Sensitive documents are requested only when you apply.</p>
+      <span className="eyebrow">{isArabic ? 'إعدادات الحساب' : 'Account settings'}</span><h2>{t('editProfile')}</h2><p className="modal-description">{isArabic ? 'رقم الهاتف مطلوب. لا تُطلب المستندات الحساسة إلا عند التقديم.' : 'Your phone number is required. Sensitive documents are requested only when you apply.'}</p>
       <form className="stack-form" onSubmit={onSubmit}>
         <label className="form-label">{t('name')}<input value={profile.name} onChange={(event) => update('name', event.target.value)} required /></label>
-        <label className="form-label">{t('email')}<input value={profile.email} disabled /><small>Change email through account security settings.</small></label>
+        <label className="form-label">{t('email')}<input value={profile.email} disabled /><small>{isArabic ? 'غيّر البريد من إعدادات أمان الحساب.' : 'Change email through account security settings.'}</small></label>
         <label className="form-label">{t('phone')}<input type="tel" value={profile.phone} onChange={(event) => update('phone', event.target.value)} required /></label>
         <label className="form-label">{t('location')}<input value={profile.location} onChange={(event) => update('location', event.target.value)} /></label>
-        <label className="form-label">{t('headline')}<input value={profile.headline} onChange={(event) => update('headline', event.target.value)} placeholder="e.g. Registered nurse · 4 years experience" /></label>
-        <label className="form-label">{t('skills')}<textarea value={profile.skills} onChange={(event) => update('skills', event.target.value)} placeholder="Customer service, driving, safety..." rows={3} /></label>
+        <label className="form-label">{t('headline')}<input value={profile.headline} onChange={(event) => update('headline', event.target.value)} placeholder={isArabic ? 'مثال: ممرض مسجل · خبرة 4 سنوات' : 'e.g. Registered nurse · 4 years experience'} /></label>
+        <label className="form-label">{t('skills')}<textarea value={profile.skills} onChange={(event) => update('skills', event.target.value)} placeholder={isArabic ? 'خدمة العملاء، القيادة، السلامة...' : 'Customer service, driving, safety...'} rows={3} /></label>
         <div className="modal-actions"><button className="button button-gold" type="submit">{t('saveChanges')}</button><button className="button button-outline" type="button" onClick={onClose}>{t('cancel')}</button></div>
       </form>
     </Modal>
   )
 }
 
-function RecruiterForm({ onSubmit, isSubmitting }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void; isSubmitting: boolean }) {
+function RecruiterForm({ onSubmit, isSubmitting, isArabic }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void; isSubmitting: boolean; isArabic: boolean }) {
+  const employerOption = isArabic ? 'وكالة توظيف كينية · الدفع بالشلن' : 'Kenyan recruitment agency · KSh billing'
+  const gulfOption = isArabic ? 'صاحب عمل خليجي · الدفع بالريال' : 'Gulf employer · SAR billing'
   return (
     <form className="panel recruiter-form" onSubmit={onSubmit}>
-      <div className="form-section-heading"><span className="step-count">01</span><div><h2>Organization and authorized representative</h2><p>Private documents are visible only to authorized reviewers.</p></div></div>
+      <div className="form-section-heading"><span className="step-count">01</span><div><h2>{isArabic ? 'المؤسسة والممثل المخوّل' : 'Organization and authorized representative'}</h2><p>{isArabic ? 'لا يطّلع على المستندات الخاصة إلا المراجعون المخوّلون.' : 'Private documents are visible only to authorized reviewers.'}</p></div></div>
       <div className="form-grid">
-        <label className="form-label">Legal agency / company name<input name="agencyName" required /></label>
-        <label className="form-label">Registration number<input name="registrationNumber" required /></label>
-        <label className="form-label">Employer market<select name="employerMarket" required defaultValue="kenyan_agency"><option value="kenyan_agency">Kenyan recruitment agency · KSh billing</option><option value="gulf_employer">Gulf employer · SAR billing</option></select></label>
-        <label className="form-label">Authorized representative<input name="representativeName" required /></label>
-        <label className="form-label">Business email<input name="contactEmail" type="email" required /></label>
-        <label className="form-label">Business phone<input name="contactPhone" type="tel" required /></label>
-        <label className="form-label">Plan for this job<select name="listingPlan" required defaultValue="standard"><option value="standard">Single listing · 30 days</option><option value="premium">Premium company subscription · requires active plan</option></select></label>
-        <label className="form-label">Company WhatsApp number <small>Optional; shown only on approved premium listings.</small><input name="whatsappContact" type="tel" placeholder="+971…" /></label>
+        <label className="form-label">{isArabic ? 'الاسم القانوني للوكالة أو الشركة' : 'Legal agency / company name'}<input name="agencyName" required /></label>
+        <label className="form-label">{isArabic ? 'رقم التسجيل' : 'Registration number'}<input name="registrationNumber" required /></label>
+        <label className="form-label">{isArabic ? 'سوق صاحب العمل' : 'Employer market'}<select name="employerMarket" required defaultValue="kenyan_agency"><option value="kenyan_agency">{employerOption}</option><option value="gulf_employer">{gulfOption}</option></select></label>
+        <label className="form-label">{isArabic ? 'الممثل المخوّل' : 'Authorized representative'}<input name="representativeName" required /></label>
+        <label className="form-label">{isArabic ? 'بريد العمل الإلكتروني' : 'Business email'}<input name="contactEmail" type="email" required /></label>
+        <label className="form-label">{isArabic ? 'هاتف العمل' : 'Business phone'}<input name="contactPhone" type="tel" required /></label>
+        <label className="form-label">{isArabic ? 'خطة هذه الوظيفة' : 'Plan for this job'}<select name="listingPlan" required defaultValue="standard"><option value="standard">{isArabic ? 'إعلان واحد · 30 يومًا' : 'Single listing · 30 days'}</option><option value="premium">{isArabic ? 'اشتراك شركة مميز · يتطلب خطة نشطة' : 'Premium company subscription · requires active plan'}</option></select></label>
+        <label className="form-label">{isArabic ? 'رقم واتساب الشركة' : 'Company WhatsApp number'} <small>{isArabic ? 'اختياري؛ يظهر فقط في الإعلانات المميزة المعتمدة.' : 'Optional; shown only on approved premium listings.'}</small><input name="whatsappContact" type="tel" placeholder="+971…" /></label>
       </div>
+      <div className="privacy-callout recruiter-document-privacy"><LockKeyhole size={17} /><span>{isArabic
+        ? 'تُحفظ الملفات في مساحة تخزين خاصة. يقتصر الوصول على حسابك ومسؤولي GulfBridge المخوّلين. لا يوجد حذف تلقائي حاليًا؛ حذف الحساب يزيل الملفات المرتبطة به.'
+        : 'Files are stored in a private bucket. Access is limited to your account and authorized GulfBridge administrators. No automatic expiry is configured; deleting your account removes its uploaded files.'}</span></div>
       <div className="document-upload-grid">
-        <DocumentUpload name="businessDocument" title="Business registration" note="Upload official registration evidence" />
-        <DocumentUpload name="recruitmentLicence" title="Applicable recruitment authorization" note="Upload current licensing evidence" />
-        <DocumentUpload name="representativeId" title="Representative ID" note="Private verification document" />
+        <DocumentUpload name="businessDocument" title={isArabic ? 'تسجيل النشاط التجاري' : 'Business registration'} note={isArabic ? 'أرفق إثبات التسجيل الرسمي' : 'Upload official registration evidence'} isArabic={isArabic} />
+        <DocumentUpload name="recruitmentLicence" title={isArabic ? 'ترخيص التوظيف المعمول به' : 'Applicable recruitment authorization'} note={isArabic ? 'أرفق إثبات الترخيص الحالي' : 'Upload current licensing evidence'} isArabic={isArabic} />
+        <DocumentUpload name="representativeId" title={isArabic ? 'هوية الممثل' : 'Representative ID'} note={isArabic ? 'مستند تحقق خاص' : 'Private verification document'} isArabic={isArabic} />
       </div>
-      <div className="form-section-heading second"><span className="step-count">02</span><div><h2>Job offer details</h2><p>Be clear about work, pay, visas, and any fees.</p></div></div>
+      <div className="form-section-heading second"><span className="step-count">02</span><div><h2>{isArabic ? 'تفاصيل عرض العمل' : 'Job offer details'}</h2><p>{isArabic ? 'وضّح العمل والأجر والتأشيرة وأي رسوم.' : 'Be clear about work, pay, visas, and any fees.'}</p></div></div>
       <div className="form-grid">
-        <label className="form-label">Job title<input name="jobTitle" required /></label>
-        <label className="form-label">Destination country<select name="country" required defaultValue=""><option value="" disabled>Select country</option>{destinations.slice(1).map((country) => <option key={country}>{country}</option>)}</select></label>
-        <label className="form-label">City<input name="city" required /></label>
-        <label className="form-label">Category<select name="category" required defaultValue=""><option value="" disabled>Select category</option>{categoryNames.slice(1).map((category) => <option key={category}>{category}</option>)}</select></label>
-        <label className="form-label">Salary from<input name="salaryMin" type="number" min="0" required /></label>
-        <label className="form-label">Salary to<input name="salaryMax" type="number" min="0" required /></label>
-        <label className="form-label">Salary currency<select name="currency" required defaultValue="SAR">{['SAR', 'AED', 'QAR', 'KWD', 'OMR', 'BHD', 'CAD', 'USD'].map((currency) => <option key={currency}>{currency}</option>)}</select></label>
-        <label className="form-label">Employment type<select name="employmentType" defaultValue="Full time"><option>Full time</option><option>Part time</option><option>Contract</option><option>Seasonal</option></select></label>
+        <label className="form-label">{isArabic ? 'المسمى الوظيفي' : 'Job title'}<input name="jobTitle" required /></label>
+        <label className="form-label">{isArabic ? 'دولة الوجهة' : 'Destination country'}<select name="country" required defaultValue=""><option value="" disabled>{isArabic ? 'اختر الدولة' : 'Select country'}</option>{destinations.slice(1).map((country) => <option key={country} value={country}>{localizeCountry(country, isArabic)}</option>)}</select></label>
+        <label className="form-label">{isArabic ? 'المدينة' : 'City'}<input name="city" required /></label>
+        <label className="form-label">{isArabic ? 'المجال' : 'Category'}<select name="category" required defaultValue=""><option value="" disabled>{isArabic ? 'اختر المجال' : 'Select category'}</option>{categoryNames.slice(1).map((category) => <option key={category} value={category}>{localizeCategory(category, isArabic)}</option>)}</select></label>
+        <label className="form-label">{isArabic ? 'الراتب من' : 'Salary from'}<input name="salaryMin" type="number" min="0" required /></label>
+        <label className="form-label">{isArabic ? 'الراتب إلى' : 'Salary to'}<input name="salaryMax" type="number" min="0" required /></label>
+        <label className="form-label">{isArabic ? 'عملة الراتب' : 'Salary currency'}<select name="currency" required defaultValue="SAR">{['SAR', 'AED', 'QAR', 'KWD', 'OMR', 'BHD', 'CAD', 'USD'].map((currency) => <option key={currency}>{currency}</option>)}</select></label>
+        <label className="form-label">{isArabic ? 'نوع التوظيف' : 'Employment type'}<select name="employmentType" defaultValue="Full time"><option value="Full time">{isArabic ? 'دوام كامل' : 'Full time'}</option><option value="Part time">{isArabic ? 'دوام جزئي' : 'Part time'}</option><option value="Contract">{isArabic ? 'عقد' : 'Contract'}</option><option value="Seasonal">{isArabic ? 'موسمي' : 'Seasonal'}</option></select></label>
       </div>
-      <label className="form-label full-field">Job description<textarea name="description" rows={5} minLength={30} required placeholder="Responsibilities, qualifications, work conditions, visa/sponsorship, benefits, and any worker-paid fees..." /></label>
-      <div className="form-consent"><input type="checkbox" required /><span>I confirm these details are accurate and authorize GulfBridge admins to review this submission. This job will not be public until admin approval and payment confirmation.</span></div>
-      <div className="recruiter-submit"><p><ShieldCheck size={16} /> Review → approval → payment → publication</p><button className="button button-gold" disabled={isSubmitting} type="submit">{isSubmitting ? 'Submitting…' : 'Submit for admin review'} <ArrowRight size={16} /></button></div>
+      <label className="form-label full-field">{isArabic ? 'وصف الوظيفة' : 'Job description'}<textarea name="description" rows={5} minLength={30} required placeholder={isArabic ? 'المسؤوليات والمؤهلات وظروف العمل والتأشيرة والمزايا وأي رسوم على العامل...' : 'Responsibilities, qualifications, work conditions, visa/sponsorship, benefits, and any worker-paid fees...'} /></label>
+      <div className="form-consent"><input type="checkbox" required /><span>{isArabic ? 'أؤكد دقة هذه المعلومات وأوافق على مراجعة مسؤولي GulfBridge لهذا الطلب. لن تُنشر الوظيفة قبل الموافقة الإدارية وتأكيد الدفع.' : 'I confirm these details are accurate and authorize GulfBridge admins to review this submission. This job will not be public until admin approval and payment confirmation.'}</span></div>
+      <div className="recruiter-submit"><p><ShieldCheck size={16} /> {isArabic ? 'مراجعة ← موافقة ← دفع ← نشر' : 'Review → approval → payment → publication'}</p><button className="button button-gold" disabled={isSubmitting} type="submit">{isSubmitting ? (isArabic ? 'جارٍ الإرسال…' : 'Submitting…') : (isArabic ? 'إرسال للمراجعة الإدارية' : 'Submit for admin review')} <ArrowRight size={16} /></button></div>
     </form>
   )
 }
 
-function DocumentUpload({ name, title, note }: { name: string; title: string; note: string }) {
-  return <label className="document-upload"><FileCheck2 size={19} /><strong>{title}</strong><span>{note}</span><input name={name} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required /><small>PDF, JPG, PNG · max 10 MB</small></label>
+function DocumentUpload({ name, title, note, isArabic }: { name: string; title: string; note: string; isArabic: boolean }) {
+  return <label className="document-upload"><FileCheck2 size={19} /><strong>{title}</strong><span>{note}</span><input name={name} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" required /><small>{isArabic ? 'PDF أو JPG أو PNG · بحد أقصى 10 ميغابايت' : 'PDF, JPG, PNG · max 10 MB'}</small></label>
 }
 
-function PaymentDetailsForm({ amount, currency, onSubmit }: { amount: number; currency: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function PaymentDetailsForm({ amount, currency, onSubmit, isArabic }: { amount: number; currency: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; isArabic: boolean }) {
   return <form className="payment-details-form" onSubmit={onSubmit}>
-    <strong>Payment reference · {formatMoney(amount, currency)}</strong>
-    <label className="form-label">Payment method<select name="method" defaultValue="bank_transfer"><option value="bank_transfer">Bank transfer · manual confirmation</option><option value="mpesa">M-Pesa · not connected yet</option><option value="card">Card · not connected yet</option></select></label>
-    <label className="form-label">Bank transfer reference<input name="reference" required /></label>
-    <button className="button button-gold" type="submit">Submit reference for confirmation</button>
+    <strong>{isArabic ? 'مرجع الدفع' : 'Payment reference'} · {formatMoney(amount, currency)}</strong>
+    <label className="form-label">{isArabic ? 'طريقة الدفع' : 'Payment method'}<select name="method" defaultValue="bank_transfer"><option value="bank_transfer">{isArabic ? 'تحويل بنكي · تأكيد يدوي' : 'Bank transfer · manual confirmation'}</option><option value="mpesa">{isArabic ? 'M-Pesa · غير متصل حاليًا' : 'M-Pesa · not connected yet'}</option><option value="card">{isArabic ? 'بطاقة · غير متصلة حاليًا' : 'Card · not connected yet'}</option></select></label>
+    <label className="form-label">{isArabic ? 'مرجع التحويل البنكي' : 'Bank transfer reference'}<input name="reference" required /></label>
+    <button className="button button-gold" type="submit">{isArabic ? 'إرسال المرجع للتأكيد' : 'Submit reference for confirmation'}</button>
   </form>
 }
 
-function PremiumRequestCard({ request, onSubmit }: { request: PremiumRequest; onSubmit: (event: FormEvent<HTMLFormElement>, request: PremiumRequest) => void }) {
-  return <article className="submission-card"><div className="submission-card-heading"><div><h3>{request.employer_market === 'kenyan_agency' ? 'Kenyan agency' : 'Gulf employer'} premium plan</h3><p>{formatMoney(request.payment_amount, request.payment_currency)} · {request.status.replaceAll('_', ' ')}</p></div><span className="status-pill">{request.status.replaceAll('_', ' ')}</span></div>
-    {request.status === 'awaiting_payment' && <PaymentDetailsForm amount={request.payment_amount} currency={request.payment_currency} onSubmit={(event) => onSubmit(event, request)} />}
-    {request.status === 'pending_confirmation' && <p className="fine-print">Payment reference submitted. Premium access begins only after admin confirmation.</p>}
-    {request.status === 'paid' && <p className="fine-print">Premium company plan is active.</p>}
+function PremiumRequestCard({ request, onSubmit, isArabic }: { request: PremiumRequest; onSubmit: (event: FormEvent<HTMLFormElement>, request: PremiumRequest) => void; isArabic: boolean }) {
+  const statusLabel = isArabic ? ({ awaiting_payment: 'بانتظار الدفع', pending_confirmation: 'بانتظار التأكيد', paid: 'مدفوع' } as Record<string, string>)[request.status] || request.status : request.status.replaceAll('_', ' ')
+  return <article className="submission-card"><div className="submission-card-heading"><div><h3>{request.employer_market === 'kenyan_agency' ? (isArabic ? 'وكالة كينية' : 'Kenyan agency') : (isArabic ? 'صاحب عمل خليجي' : 'Gulf employer')} {isArabic ? 'خطة مميزة' : 'premium plan'}</h3><p>{formatMoney(request.payment_amount, request.payment_currency)} · {statusLabel}</p></div><span className="status-pill">{statusLabel}</span></div>
+    {request.status === 'awaiting_payment' && <PaymentDetailsForm amount={request.payment_amount} currency={request.payment_currency} onSubmit={(event) => onSubmit(event, request)} isArabic={isArabic} />}
+    {request.status === 'pending_confirmation' && <p className="fine-print">{isArabic ? 'تم إرسال مرجع الدفع. يبدأ الوصول المميز بعد تأكيد الإدارة فقط.' : 'Payment reference submitted. Premium access begins only after admin confirmation.'}</p>}
+    {request.status === 'paid' && <p className="fine-print">{isArabic ? 'خطة الشركة المميزة نشطة.' : 'Premium company plan is active.'}</p>}
   </article>
 }
 
-function RecruiterSubmissionCard({ submission, onPayment }: { submission: RecruiterSubmission; onPayment: (event: FormEvent<HTMLFormElement>, submission: RecruiterSubmission) => void }) {
-  return <article className="submission-card"><div className="submission-card-heading"><div><h3>{submission.job_title}</h3><p>{submission.agency_name} · {submission.city}, {submission.country}</p></div><span className="status-pill">{submission.review_status.replaceAll('_', ' ')}</span></div>
+function RecruiterSubmissionCard({ submission, onPayment, isArabic }: { submission: RecruiterSubmission; onPayment: (event: FormEvent<HTMLFormElement>, submission: RecruiterSubmission) => void; isArabic: boolean }) {
+  const reviewStatus = isArabic ? ({ pending: 'قيد المراجعة', approved: 'تمت الموافقة', rejected: 'مرفوض', needs_changes: 'يتطلب تعديلات' } as Record<string, string>)[submission.review_status] || submission.review_status : submission.review_status.replaceAll('_', ' ')
+  const paymentStatus = isArabic ? ({ awaiting_payment: 'بانتظار الدفع', pending_confirmation: 'بانتظار التأكيد', paid: 'مدفوع' } as Record<string, string>)[submission.payment_status] || submission.payment_status : submission.payment_status.replaceAll('_', ' ')
+  return <article className="submission-card"><div className="submission-card-heading"><div><h3>{submission.job_title}</h3><p>{submission.agency_name} · {submission.city}, {localizeCountry(submission.country, isArabic)}</p></div><span className="status-pill">{reviewStatus}</span></div>
     {submission.review_note && <p className="review-note">{submission.review_note}</p>}
-    <p className="fine-print">Payment: {submission.payment_status.replaceAll('_', ' ')} · Listing: {submission.listing_plan}</p>
-    {submission.review_status === 'approved' && submission.listing_plan === 'standard' && submission.payment_status === 'awaiting_payment' && <PaymentDetailsForm amount={submission.payment_amount} currency={submission.payment_currency} onSubmit={(event) => onPayment(event, submission)} />}
-    {submission.payment_status === 'pending_confirmation' && <p className="fine-print">Payment reference submitted; the listing remains private until admin confirms it.</p>}
+    <p className="fine-print">{isArabic ? 'الدفع' : 'Payment'}: {paymentStatus} · {isArabic ? 'الإعلان' : 'Listing'}: {submission.listing_plan === 'premium' && isArabic ? 'مميز' : submission.listing_plan}</p>
+    {submission.review_status === 'approved' && submission.listing_plan === 'standard' && submission.payment_status === 'awaiting_payment' && <PaymentDetailsForm amount={submission.payment_amount} currency={submission.payment_currency} onSubmit={(event) => onPayment(event, submission)} isArabic={isArabic} />}
+    {submission.payment_status === 'pending_confirmation' && <p className="fine-print">{isArabic ? 'تم إرسال مرجع الدفع؛ يظل الإعلان خاصًا حتى تأكيد الإدارة.' : 'Payment reference submitted; the listing remains private until admin confirms it.'}</p>}
   </article>
 }
 
-function EmployerApplicationCard({ application, onUpdate }: { application: EmployerApplication; onUpdate: (applicationId: string, status: string) => void }) {
-  return <article className="submission-card"><div className="submission-card-heading"><div><h3>{application.applicant_name} · {application.job_title}</h3><p>{application.applicant_headline || application.applicant_location} · Applied {new Date(application.applied_at).toLocaleDateString()}</p></div><span className="status-pill">{application.status}</span></div>
-    <p className="application-skills">{application.applicant_skills?.join(' · ') || 'No skills listed'}</p>
-    <label className="form-label">Update progress<select value={application.status} onChange={(event) => onUpdate(application.application_id, event.target.value)}>{applicationStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></label>
+function EmployerApplicationCard({ application, onUpdate, isArabic }: { application: EmployerApplication; onUpdate: (applicationId: string, status: string) => void; isArabic: boolean }) {
+  const statusLabels: Record<string, string> = { applied: 'تم التقديم', interview: 'مقابلة', offer: 'عرض وظيفي', medical: 'فحص طبي', visa: 'تأشيرة', travel: 'ترتيبات السفر', flight: 'رحلة جوية', rejected: 'مرفوض', withdrawn: 'منسحب' }
+  return <article className="submission-card"><div className="submission-card-heading"><div><h3>{application.applicant_name} · {application.job_title}</h3><p>{application.applicant_headline || application.applicant_location} · {isArabic ? 'تاريخ التقديم' : 'Applied'} {new Date(application.applied_at).toLocaleDateString(isArabic ? 'ar' : undefined)}</p></div><span className="status-pill">{isArabic ? statusLabels[application.status] || application.status : application.status}</span></div>
+    <p className="application-skills">{application.applicant_skills?.join(' · ') || (isArabic ? 'لم تُدرج مهارات' : 'No skills listed')}</p>
+    <label className="form-label">{isArabic ? 'تحديث التقدم' : 'Update progress'}<select value={application.status} onChange={(event) => onUpdate(application.application_id, event.target.value)}>{applicationStatuses.map((status) => <option key={status} value={status}>{isArabic ? statusLabels[status] || status : status}</option>)}</select></label>
   </article>
 }
 
@@ -3206,14 +3377,16 @@ function AdminApplicationCard({ application, onUpdate }: { application: AdminApp
 
 const applicationStatuses = ['applied', 'interview', 'offer', 'medical', 'visa', 'travel', 'flight', 'rejected', 'withdrawn']
 
-function DeleteAccountModal({ onClose, onConfirm, isSubmitting }: { onClose: () => void; onConfirm: () => void; isSubmitting: boolean }) {
-  return <Modal onClose={onClose} className="form-modal"><span className="eyebrow">Permanent action</span><h2>Delete your account?</h2><p className="modal-description">This permanently deletes your account and private application documents. This action cannot be undone. Data subject to legal-retention requirements may be retained where required.</p><div className="modal-actions"><button className="button button-danger" type="button" disabled={isSubmitting} onClick={onConfirm}>{isSubmitting ? 'Deleting…' : 'Permanently delete account'}</button><button className="button button-outline" type="button" disabled={isSubmitting} onClick={onClose}>Cancel</button></div></Modal>
+function DeleteAccountModal({ onClose, onConfirm, isSubmitting, isArabic }: { onClose: () => void; onConfirm: () => void; isSubmitting: boolean; isArabic: boolean }) {
+  return <Modal onClose={onClose} className="form-modal"><span className="eyebrow">{isArabic ? 'إجراء نهائي' : 'Permanent action'}</span><h2>{isArabic ? 'هل تريد حذف حسابك؟' : 'Delete your account?'}</h2><p className="modal-description">{isArabic ? 'سيؤدي ذلك إلى حذف حسابك ومستندات طلباتك الخاصة نهائيًا. لا يمكن التراجع عن هذا الإجراء. قد تُحتفظ البيانات الخاضعة لمتطلبات الاحتفاظ القانونية عند الاقتضاء.' : 'This permanently deletes your account and private application documents. This action cannot be undone. Data subject to legal-retention requirements may be retained where required.'}</p><div className="modal-actions"><button className="button button-danger" type="button" disabled={isSubmitting} onClick={onConfirm}>{isSubmitting ? (isArabic ? 'جارٍ الحذف…' : 'Deleting…') : (isArabic ? 'حذف الحساب نهائيًا' : 'Permanently delete account')}</button><button className="button button-outline" type="button" disabled={isSubmitting} onClick={onClose}>{isArabic ? 'إلغاء' : 'Cancel'}</button></div></Modal>
 }
 
-function ApplicationCard({ application }: { application: ApplicationRecord }) {
+function ApplicationCard({ application, isArabic }: { application: ApplicationRecord; isArabic: boolean }) {
   const steps = ['Applied', 'Interview', 'Offer', 'Visa', 'Flight']
+  const stepsAr: Record<string, string> = { Applied: 'تم التقديم', Interview: 'مقابلة', Offer: 'عرض وظيفي', Visa: 'تأشيرة', Flight: 'رحلة جوية' }
+  const statusAr: Record<string, string> = { applied: 'تم التقديم', interview: 'مقابلة', offer: 'عرض وظيفي', medical: 'فحص طبي', visa: 'تأشيرة', travel: 'ترتيبات السفر', flight: 'رحلة جوية', rejected: 'مرفوض', withdrawn: 'منسحب' }
   const current = Math.max(0, steps.findIndex((step) => step.toLowerCase() === application.status.toLowerCase()))
-  return <article className="application-card panel"><div className="application-head"><div className="company-avatar">{getInitials(application.company)}</div><div><h3>{application.jobTitle}</h3><p>{application.company} · Reference {application.id.slice(0, 8).toUpperCase()}</p></div><span className="status-pill status-progress">{application.status}</span></div><div className="tracker-steps">{steps.map((step, index) => <div className={`tracker-step ${index < current ? 'complete' : ''} ${index === current ? 'current' : ''}`} key={step}><span>{index < current ? <Check size={13} /> : index + 1}</span><small>{step}</small></div>)}</div><p className="tracker-update">Last update: {application.updated} · Employer-reported progress</p></article>
+  return <article className="application-card panel"><div className="application-head"><div className="company-avatar">{getInitials(application.company)}</div><div><h3>{application.jobTitle}</h3><p>{application.company} · {isArabic ? 'رقم مرجعي' : 'Reference'} {application.id.slice(0, 8).toUpperCase()}</p></div><span className="status-pill status-progress">{isArabic ? statusAr[application.status.toLowerCase()] || application.status : application.status}</span></div><div className="tracker-steps">{steps.map((step, index) => <div className={`tracker-step ${index < current ? 'complete' : ''} ${index === current ? 'current' : ''}`} key={step}><span>{index < current ? <Check size={13} /> : index + 1}</span><small>{isArabic ? stepsAr[step] : step}</small></div>)}</div><p className="tracker-update">{isArabic ? 'آخر تحديث' : 'Last update'}: {application.updated} · {isArabic ? 'تقدم أبلغ عنه صاحب العمل' : 'Employer-reported progress'}</p></article>
 }
 
 function PriceCard({ title, price, note }: { title: string; price: string; note: string }) {
