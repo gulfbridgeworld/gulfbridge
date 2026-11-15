@@ -44,15 +44,6 @@ create table if not exists public.profiles (
   updated_at timestamptz not null default now()
 );
 
-drop policy if exists "job seeker reads saved jobs" on public.saved_jobs;
-create policy "job seeker reads saved jobs" on public.saved_jobs for select to authenticated using (applicant_id = auth.uid());
-drop policy if exists "job seeker saves published jobs" on public.saved_jobs;
-create policy "job seeker saves published jobs" on public.saved_jobs for insert to authenticated with check (
-  applicant_id = auth.uid() and public.is_published_job(job_id)
-);
-drop policy if exists "job seeker removes saved jobs" on public.saved_jobs;
-create policy "job seeker removes saved jobs" on public.saved_jobs for delete to authenticated using (applicant_id = auth.uid());
-
 create table if not exists public.user_roles (
   user_id uuid not null references auth.users(id) on delete cascade,
   role public.app_role not null,
@@ -695,7 +686,8 @@ select
   listing_plan,
   verification_status,
   case when listing_plan = 'premium' then whatsapp_contact else null end as whatsapp_contact,
-  created_at
+  created_at,
+  reviewed_at as verification_checked_at
 from public.job_submissions
 where review_status = 'approved'
   and payment_status = 'paid'
@@ -769,6 +761,15 @@ alter table public.application_events enable row level security;
 alter table public.admin_audit_log enable row level security;
 alter table public.listing_payments enable row level security;
 alter table public.premium_subscriptions enable row level security;
+
+drop policy if exists "job seeker reads saved jobs" on public.saved_jobs;
+create policy "job seeker reads saved jobs" on public.saved_jobs for select to authenticated using (applicant_id = auth.uid());
+drop policy if exists "job seeker saves published jobs" on public.saved_jobs;
+create policy "job seeker saves published jobs" on public.saved_jobs for insert to authenticated with check (
+  applicant_id = auth.uid() and public.is_published_job(job_id)
+);
+drop policy if exists "job seeker removes saved jobs" on public.saved_jobs;
+create policy "job seeker removes saved jobs" on public.saved_jobs for delete to authenticated using (applicant_id = auth.uid());
 
 drop policy if exists "profile owner reads profile" on public.profiles;
 create policy "profile owner reads profile" on public.profiles for select to authenticated using (id = auth.uid() or public.has_role('admin'));
