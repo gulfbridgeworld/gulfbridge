@@ -29,12 +29,15 @@ import {
   Moon,
   MessageCircle,
   Plane,
+  Play,
   Sun,
   Search,
   Send,
   ShieldCheck,
   Sparkles,
   UserRound,
+  Volume2,
+  VolumeX,
   WalletCards,
   X,
 } from 'lucide-react'
@@ -180,6 +183,7 @@ type InstallPromptEvent = Event & {
 const appPages: Page[] = ['home', 'jobs', 'map', 'saved', 'applications', 'profile', 'recruiter', 'admin', 'help', 'guides', 'alerts', 'inbox']
 const flightPhoto = '/images/gulfbridge-flight.jpg'
 const airportHeroPhoto = '/images/gulfbridge-hero.jpg'
+const welcomeVideoUrl = 'https://qwyflhcjbhzvopjiammt.supabase.co/storage/v1/object/public/videos/video_2026-11-15_10-48-05.mp4'
 
 const countryHighlights = [
   { country: 'United Arab Emirates', city: 'Dubai', flag: '🇦🇪', code: 'UAE' },
@@ -2776,6 +2780,7 @@ function App() {
         <div className="side-menu-bottom"><button type="button" onClick={() => account ? navigate('profile') : setAuthOpen(true)}><UserRound size={17} /> {account ? 'My profile' : 'Sign in'}</button></div>
       </nav>
 
+      <WelcomeVideo visible={page === 'home'} />
       {renderPage()}
 
       <footer className="site-footer">
@@ -2809,6 +2814,101 @@ function App() {
       }}><span className="message-toast-icon"><MessageSquare size={17} /></span><span><strong>New message</strong><small>Tap to open your GulfBridge inbox.</small></span><ArrowRight size={16} /></button><button className="message-toast-close" type="button" aria-label="Dismiss new message alert" onClick={() => setMessageAlert(null)}><X size={14} /></button></div>}
       {notice && <div className="toast" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice('')} type="button"><X size={15} /></button></div>}
     </div>
+  )
+}
+
+function WelcomeVideo({ visible }: { visible: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [hasPlayed, setHasPlayed] = useState(false)
+  const [isMuted, setIsMuted] = useState(true)
+  const [isEnded, setIsEnded] = useState(false)
+  const [hasError, setHasError] = useState(false)
+
+  useEffect(() => {
+    if (!visible) videoRef.current?.pause()
+  }, [visible])
+
+  const replay = () => {
+    const video = videoRef.current
+    if (!video) return
+    setHasError(false)
+    setIsEnded(false)
+    video.currentTime = 0
+    void video.play().catch((error: unknown) => {
+      console.error('Could not replay the GulfBridge welcome video:', error)
+      setHasError(true)
+    })
+  }
+
+  const retry = () => {
+    const video = videoRef.current
+    if (!video) return
+    setHasError(false)
+    setIsEnded(false)
+    setHasPlayed(false)
+    video.load()
+  }
+
+  const handleVideoError = () => {
+    const video = videoRef.current
+    if (video && Number.isFinite(video.duration) && video.currentTime >= video.duration - 0.5) {
+      setIsEnded(true)
+      setHasError(false)
+      return
+    }
+    setHasError(true)
+  }
+
+  return (
+    <section className={`welcome-video-section ${visible ? '' : 'welcome-video-hidden'}`} aria-label="GulfBridge welcome video" aria-hidden={!visible}>
+      <div className={`welcome-video-frame${isEnded ? ' is-ended' : ''}${hasError ? ' has-error' : ''}`}>
+        <video
+          ref={videoRef}
+          className="welcome-video"
+          src={welcomeVideoUrl}
+          autoPlay={!hasPlayed}
+          muted={isMuted}
+          playsInline
+          controls
+          controlsList="nodownload"
+          disablePictureInPicture
+          preload="auto"
+          onPlay={() => setHasPlayed(true)}
+          onVolumeChange={() => setIsMuted(videoRef.current?.muted ?? true)}
+          onEnded={() => { setIsEnded(true); setHasError(false) }}
+          onError={handleVideoError}
+          onContextMenu={(event) => event.preventDefault()}
+        />
+        {!isEnded && !hasError && (
+          <button
+            className="welcome-video-sound"
+            type="button"
+            aria-label={isMuted ? 'Unmute welcome video' : 'Mute welcome video'}
+            aria-pressed={!isMuted}
+            onClick={() => {
+              const video = videoRef.current
+              if (!video) return
+              const nextMuted = !video.muted
+              video.muted = nextMuted
+              setIsMuted(nextMuted)
+            }}
+          >
+            {isMuted ? <VolumeX size={19} /> : <Volume2 size={19} />}
+          </button>
+        )}
+        {isEnded && (
+          <button className="welcome-video-replay" type="button" aria-label="Replay welcome video" onClick={replay}>
+            <Play size={19} fill="currentColor" />
+          </button>
+        )}
+        {hasError && (
+          <div className="welcome-video-error" role="alert">
+            <span>Welcome video could not be loaded.</span>
+            <button type="button" onClick={retry}>Retry</button>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
