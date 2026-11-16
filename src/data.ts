@@ -14,6 +14,7 @@ export type Job = {
   requirements: string[]
   benefits: string[]
   verified: boolean
+  verificationCheckedAt?: string
   premium: boolean
   whatsapp?: string
   coordinates: [number, number]
